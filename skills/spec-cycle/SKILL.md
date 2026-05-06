@@ -119,9 +119,21 @@ If still red and `round == 4`:
   only modify themselves — they may not silently change content in FROZEN
   sections. If a REWRITE forces a FROZEN-section edit (e.g., changed function
   signature must propagate), explicitly promote that section to REWRITE first.
-- Pass the closed-issues manifest from rounds 1–3 to the rewrite phase as
-  regression constraints: every previously-CLOSED issue must remain closed in
-  the rewritten spec.
+- Build a closed-issues manifest from rounds 1–3 and pass it to the rewrite
+  phase as regression constraints. Construct it by scanning each round's three
+  reviewer reports (`correctness.md`, `edge-cases.md`, `conventions.md`) and
+  collecting every finding whose status resolved to CLOSED in a later round's
+  closure table. Each entry has the shape:
+  ```
+  { finding_id: "correctness/R1/F-3", title: "process_divergent no-op",
+    closed_in: "round-2", evidence: "spec § Out of scope line 14" }
+  ```
+  A finding counts as CLOSED when a subsequent round's closure table marks it
+  CLOSED with evidence. Duplicates across lenses (same root issue surfaced by
+  two reviewers) are merged — keep the first-seen ID, note the duplicate.
+  The manifest is ephemeral (constructed in-context, not written to disk).
+  Every entry is a regression constraint: the rewritten spec must preserve
+  the fix that closed it.
 - Blank-slate rewrites are forbidden at round 4. The historical "patches stop
   converging, restart" failure mode applied to plans, not to specs with
   established cross-section invariants.

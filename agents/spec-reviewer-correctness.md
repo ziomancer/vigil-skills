@@ -94,8 +94,10 @@ After grounding, work through these questions. Each is a candidate finding sourc
   library function, stdlib primitive, or framework feature the spec
   relies on, verify:
   1. **Existence** — the function/class/method exists in the version
-     pinned in `requirements.txt` / `package.json`. Grep the source or
-     cite docs.
+     pinned in the project's dependency manifest(s) or lockfile(s)
+     (`requirements.txt`, `pyproject.toml`, `package.json`,
+     `pnpm-lock.yaml`, `poetry.lock`, etc.). Grep the source or cite
+     docs.
   2. **Input/output shape** — the spec's call matches the documented
      signature (e.g., `LogisticRegression.fit` requires binary or
      multiclass discrete labels — not continuous scalars).
