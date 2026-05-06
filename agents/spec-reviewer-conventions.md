@@ -28,6 +28,28 @@ Execute these steps in order. Do not skip:
 5. **Grep the codebase for the conventions the spec is about to follow or break.** If the spec proposes a registry, grep for similar registries. If it proposes a new error-handling pattern, find the existing pattern.
 6. **Read the brief at `brief_path`** for context on intent.
 
+7. **If `round_number ≥ 2`**, read the prior-round review files from disk:
+   - `<project_root>/docs/specs/TODO/<TICKET-ID>.reviews/round-<N-1>/correctness.md`
+   - `<project_root>/docs/specs/TODO/<TICKET-ID>.reviews/round-<N-1>/edge-cases.md`
+   - `<project_root>/docs/specs/TODO/<TICKET-ID>.reviews/round-<N-1>/conventions.md`
+   For every finding in the prior round (yours and the other two lenses'),
+   verify against the current spec whether it is CLOSED, PARTIAL, REOPENED,
+   or NEW (a new variant of the same root). Render a closure table as the
+   first section of your output, before any new findings:
+
+   ```markdown
+   ## Closure of round <N-1> findings
+   | Lens | ID | Title | Status | Evidence |
+   |---|---|---|---|---|
+   | correctness | F-1 | process_divergent no-op | CLOSED | spec § Out of scope line N |
+   | edge-cases  | F-3 | sklearn degenerate    | PARTIAL | spec adds preconditions row but missing single-class test |
+   | conventions | F-1 | LLM-judge supersession | CLOSED | spec § Decision 0, line N |
+   ```
+
+   REOPENED items are P0 unless evidence shows the spec deliberately changed
+   direction with rationale. PARTIAL items keep their original severity until
+   fully closed.
+
 If `wiki_root` doesn't exist, isn't set, or is unreadable, skip steps 3–4 and proceed with CLAUDE.md alone. Don't treat this as a finding — many projects don't have a wiki.
 
 # Critique lens — conventions and prior art
@@ -63,6 +85,28 @@ Work through these axes:
 - If the spec proposes a name that conflicts with existing usage, surface it.
 - For renames: does the spec specify which existing test regexes, log messages, and CI checks need updating?
 
+## Silent spec additions vs the brief
+
+Walk the spec's Decisions / Design sections. For each load-bearing
+decision, classify it as one of:
+- **(a) Authorized by the brief** — the brief explicitly carries this
+  decision forward.
+- **(b) Authorized by the Plane ticket** — the ticket's acceptance
+  criteria require it.
+- **(c) Spec-level addition with rationale** — the spec adds something
+  the brief and ticket don't explicitly authorize, with explicit
+  rationale (e.g., a new section "Decision 0 — supersedes prior wiki
+  D1" with reasoning).
+- **(d) Silent addition** — the spec commits to a position the brief
+  and ticket don't authorize, without flagging it as an addition.
+
+Surface all (d) items as P2 minimum (P1 if the silent addition would
+change scope, behavior, or downstream-ticket interactions). Surface (c)
+items at P3 — they're fine but the human drift-check needs to see them.
+
+This catches scope creep that survives correctness review (the addition
+is technically correct) and edge-cases review (no edge it breaks).
+
 # Severity definitions (apply these literally — be conservative)
 
 - **P0** — Spec is internally inconsistent OR references files/functions/types that don't exist OR contradicts an explicit "Done when" criterion.
@@ -79,6 +123,10 @@ Emit a markdown report with this exact shape:
 
 ```markdown
 # Conventions Review — round <N>
+
+## Closure of round <N-1> findings
+(Required for round_number ≥ 2; "N/A — round 1" otherwise.)
+<table per the grounding step>
 
 ## Findings
 
