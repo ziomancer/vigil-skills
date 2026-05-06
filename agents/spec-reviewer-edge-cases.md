@@ -23,6 +23,28 @@ Execute these steps in order. Do not skip:
 5. **Read the actual files the spec proposes to change.** You need to understand the existing control flow to identify which edges aren't handled.
 6. **Identify external dependencies** the spec touches: MCP server, Plane, model runtimes, file I/O, network, child processes. Each is a failure axis.
 
+7. **If `round_number ≥ 2`**, read the prior-round review files from disk:
+   - `<project_root>/docs/specs/TODO/<TICKET-ID>.reviews/round-<N-1>/correctness.md`
+   - `<project_root>/docs/specs/TODO/<TICKET-ID>.reviews/round-<N-1>/edge-cases.md`
+   - `<project_root>/docs/specs/TODO/<TICKET-ID>.reviews/round-<N-1>/conventions.md`
+   For every finding in the prior round (yours and the other two lenses'),
+   verify against the current spec whether it is CLOSED, PARTIAL, REOPENED,
+   or NEW (a new variant of the same root). Render a closure table as the
+   first section of your output, before any new findings:
+
+   ```markdown
+   ## Closure of round <N-1> findings
+   | Lens | ID | Title | Status | Evidence |
+   |---|---|---|---|---|
+   | correctness | F-1 | process_divergent no-op | CLOSED | spec § Out of scope line N |
+   | edge-cases  | F-3 | sklearn degenerate    | PARTIAL | spec adds preconditions row but missing single-class test |
+   | conventions | F-1 | LLM-judge supersession | CLOSED | spec § Decision 0, line N |
+   ```
+
+   REOPENED items are P0 unless evidence shows the spec deliberately changed
+   direction with rationale. PARTIAL items keep their original severity until
+   fully closed.
+
 If a grounding step is blocked (file unreadable, MCP unreachable), record it as a finding and continue.
 
 # Critique lens — edge cases and failure modes
@@ -58,6 +80,39 @@ Work through each axis. Skip none — every axis applies to most specs.
 - The spec lists tests it will add. Do those tests cover the edges above? Empty case, malformed case, external-down case?
 - For "fix bug X" specs: is there a regression test that fails today and passes after the fix? If the test plan doesn't include one, that's a finding.
 
+## Persistence checklist (REQUIRED for any spec that introduces persisted state)
+
+For every new persisted record, MCP source type, JSON file, schema column,
+or any state that survives a process restart, walk the following — each
+item is either CHECKED with evidence or FLAGGED as a finding:
+
+1. **Atomicity.** What happens if the writer is killed mid-write? Does
+   the persisted state stay in a consistent shape, or can readers
+   observe a half-written record? If the spec doesn't define a
+   `status="writing"`/`status="complete"` discipline (or equivalent),
+   surface it.
+2. **Size bound.** Is there an upper bound on the size of any field /
+   array / blob in this record? At what scale does it break (kilobytes,
+   megabytes, count of items)? Unbounded arrays in metadata are a
+   finding.
+3. **Idempotency on retry.** If the writer is invoked twice with the
+   same logical input (e.g., the pipeline retries), is the persisted
+   state the same? Does `source_item_id` ensure upsert semantics, or
+   does retry produce duplicates?
+4. **Read-side mode filtering.** When state is read back (warm-start,
+   resumption, joined query), are smoke-test / ablation / dev-mode
+   records excluded? A read that admits non-production records can
+   poison downstream production logic.
+5. **Schema-version forward-compat.** What happens when the schema
+   bumps and prior records exist with the old shape? Does the read
+   path tolerate? Migration plan?
+6. **Write-then-read race.** If two processes write the same logical
+   record concurrently, what wins? Last-writer-wins is fine if
+   documented; if undocumented, flag.
+
+Persistence-class findings that would corrupt production data on a
+realistic failure path are P1.
+
 # Severity definitions (apply these literally — be conservative)
 
 - **P0** — Spec is internally inconsistent OR references files/functions/types that don't exist OR contradicts an explicit "Done when" criterion.
@@ -74,6 +129,10 @@ Emit a markdown report with this exact shape:
 
 ```markdown
 # Edge-Cases Review — round <N>
+
+## Closure of round <N-1> findings
+(Required for round_number ≥ 2; "N/A — round 1" otherwise.)
+<table per the grounding step>
 
 ## Findings
 

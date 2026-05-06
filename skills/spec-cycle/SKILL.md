@@ -108,9 +108,35 @@ If still red and `round < 4`:
 - Do not delete history of what changed; if a section is rewritten, that's fine, but the spec at end of round must stand on its own.
 
 If still red and `round == 4`:
-- **Full rewrite.** Delete the spec and write a new one from scratch.
-- Use the brief, accumulated findings across all 4 rounds, and your understanding of which issues kept recurring.
-- Rationale: when patches stop converging, restart from scratch — accumulated patches accumulate inconsistency.
+- **Targeted rewrite, not blank-slate.** Enumerate every section of the spec
+  (Goal, Scope, Decisions, Design sub-sections, Test plan, Done-when, Out of
+  scope, plus any spec-specific sections). For each, decide:
+    - **FROZEN** — no unresolved P0/P1 in this section across rounds 1–3.
+      Copy the section verbatim from the current spec. Do not touch.
+    - **REWRITE** — has unresolved P0/P1 OR has cross-references to a REWRITE
+      section that need re-aligning.
+- Print the FROZEN/REWRITE manifest before editing. Sections in REWRITE may
+  only modify themselves — they may not silently change content in FROZEN
+  sections. If a REWRITE forces a FROZEN-section edit (e.g., changed function
+  signature must propagate), explicitly promote that section to REWRITE first.
+- Build a closed-issues manifest from rounds 1–3 and pass it to the rewrite
+  phase as regression constraints. Construct it by scanning each round's three
+  reviewer reports (`correctness.md`, `edge-cases.md`, `conventions.md`) and
+  collecting every finding whose status resolved to CLOSED in a later round's
+  closure table. Each entry has the shape:
+  ```
+  { finding_id: "correctness/R1/F-3", title: "process_divergent no-op",
+    closed_in: "round-2", evidence: "spec § Out of scope line 14" }
+  ```
+  A finding counts as CLOSED when a subsequent round's closure table marks it
+  CLOSED with evidence. Duplicates across lenses (same root issue surfaced by
+  two reviewers) are merged — keep the first-seen ID, note the duplicate.
+  The manifest is ephemeral (constructed in-context, not written to disk).
+  Every entry is a regression constraint: the rewritten spec must preserve
+  the fix that closed it.
+- Blank-slate rewrites are forbidden at round 4. The historical "patches stop
+  converging, restart" failure mode applied to plans, not to specs with
+  established cross-section invariants.
 
 ### 2f. Halt condition
 

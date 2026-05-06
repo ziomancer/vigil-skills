@@ -1,0 +1,13 @@
+language: en
+reviews:
+  auto_review:
+    enabled: true
+    drafts: false
+  request_changes_workflow: true
+  path_instructions:
+    - path: "skills/**"
+      instructions: "Claude Code skill definitions (YAML frontmatter + markdown prompt). Review for phase consistency, correct tool-use references, missing failure modes, and ambiguous instructions an LLM implementer would misinterpret."
+    - path: "agents/**"
+      instructions: "Read-only Claude Code subagent definitions. Agents must never edit files or mutate git state. Review for severity-scale consistency (P0/P1 block shipping, P2+ do not), output-contract compliance (STATUS line), and grounding steps that could be skipped."
+    - path: "sync.py"
+      instructions: "Python 3.8+ stdlib-only sync utility. No pip dependencies allowed. Cross-platform via pathlib. Review for path handling on Windows vs Unix, data loss risks (especially --prune mode), and Python 3.8 compat."

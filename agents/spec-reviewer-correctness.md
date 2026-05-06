@@ -23,6 +23,28 @@ Execute these steps in order. Do not skip:
 5. **Verify every claim the spec makes about current code.** For each function, type, file, or call site the spec names: open it, read enough of it, confirm the spec describes it accurately.
 6. **Run `git log -10 --oneline -- <touched-files>`** for the files the spec proposes to change. If a commit landed in the last 7 days, surface it — the spec may be planning around already-shifted code.
 
+7. **If `round_number ≥ 2`**, read the prior-round review files from disk:
+   - `<project_root>/docs/specs/TODO/<TICKET-ID>.reviews/round-<N-1>/correctness.md`
+   - `<project_root>/docs/specs/TODO/<TICKET-ID>.reviews/round-<N-1>/edge-cases.md`
+   - `<project_root>/docs/specs/TODO/<TICKET-ID>.reviews/round-<N-1>/conventions.md`
+   For every finding in the prior round (yours and the other two lenses'),
+   verify against the current spec whether it is CLOSED, PARTIAL, REOPENED,
+   or NEW (a new variant of the same root). Render a closure table as the
+   first section of your output, before any new findings:
+
+   ```markdown
+   ## Closure of round <N-1> findings
+   | Lens | ID | Title | Status | Evidence |
+   |---|---|---|---|---|
+   | correctness | F-1 | process_divergent no-op | CLOSED | spec § Out of scope line N |
+   | edge-cases  | F-3 | sklearn degenerate    | PARTIAL | spec adds preconditions row but missing single-class test |
+   | conventions | F-1 | LLM-judge supersession | CLOSED | spec § Decision 0, line N |
+   ```
+
+   REOPENED items are P0 unless evidence shows the spec deliberately changed
+   direction with rationale. PARTIAL items keep their original severity until
+   fully closed.
+
 If you cannot complete a grounding step (file unreadable, MCP unreachable), record that as a finding and continue. Do not skip silently.
 
 # Critique lens — correctness
@@ -36,6 +58,65 @@ After grounding, work through these questions. Each is a candidate finding sourc
 - **Stale anchors.** File:line citations in the spec that no longer match current code (you checked this in grounding step 5).
 - **Cross-surface wire-format lock.** For specs that touch MCP, schemas, or multi-repo: is the wire format / ACL ordering / audit shape pinned, or hand-waved? "By construction" claims that depend on a silent-failure path being non-silent are findings.
 - **Brief's load-bearing decisions.** If the brief explicitly carries a decision forward (e.g., "rename, don't preserve"), the spec must reflect it. Drift is a finding.
+
+- **Cross-section consistency walk (REQUIRED — do this explicitly, not by accident).**
+  The spec contains many sections that all reference the same symbols
+  (function signatures, file paths, line numbers, config keys, schema field
+  names). Walk every cross-reference and verify the citing section agrees
+  with the canonical declaration. Specifically:
+
+  1. For every function or method the spec declares (in § Module API
+     surface, § Files to create, or similar): find every other section
+     that calls it. Verify argument count, argument names, return type,
+     and the call site's expectations all match the declaration.
+  2. For every file:line anchor in the spec: re-grep the current code at
+     that line and verify the symbol the spec references is actually
+     there. Stale anchors are P1 (not P3 — they mislead the implementer).
+  3. For every config key (e.g., `ExtractionConfig.foo`) introduced in
+     one section: find every section that reads it. Verify default value,
+     type, and semantics agree.
+  4. For every code block in the spec: confirm it tells the same story
+     as the prose around it. A code block that disagrees with the
+     paragraph above it is P0 — implementers follow code blocks, not
+     prose.
+  5. For every persistent schema (MCP record types, JSON shapes,
+     pydantic models): trace one round-trip — write site reference vs
+     read site reference vs schema declaration. Mismatch on any axis is
+     a finding.
+
+  This walk catches the failure mode where a spec rewrites one section's
+  description but leaves another section pointing at the prior design.
+  Treat any cross-section disagreement as P0 if it would mislead the
+  implementer, P1 if it merely creates confusion that a careful reader
+  would unravel.
+
+- **Library-API and language-semantic correctness.** For every named
+  library function, stdlib primitive, or framework feature the spec
+  relies on, verify:
+  1. **Existence** — the function/class/method exists in the version
+     pinned in the project's dependency manifest(s) or lockfile(s)
+     (`requirements.txt`, `pyproject.toml`, `package.json`,
+     `pnpm-lock.yaml`, `poetry.lock`, etc.). Grep the source or cite
+     docs.
+  2. **Input/output shape** — the spec's call matches the documented
+     signature (e.g., `LogisticRegression.fit` requires binary or
+     multiclass discrete labels — not continuous scalars).
+  3. **Language-semantic gotchas** — Python's `hash()` is randomized
+     per process (PEP 456); JavaScript's `Object.keys()` ordering on
+     integer keys is implementation-detail; SQL `NULL`-comparison
+     semantics; Bash word-splitting; etc. If the spec depends on a
+     semantic that varies, surface it as a finding even if the code
+     "looks right."
+  4. **Determinism / reproducibility primitives** — if the spec
+     promises reproducibility, every primitive in the chain (PRNG
+     seeds, ordering, hash functions, time sources) must be explicitly
+     pinned. Hand-waved "use `hash((run_id, gen))` as seed" is a
+     finding.
+
+  Cite docs URL or source-grep evidence in the finding. Library-API
+  correctness issues at first pass are P0 (the spec isn't implementable
+  as written) or P1 (the spec is implementable but produces wrong
+  answers).
 
 # Severity definitions (apply these literally — be conservative)
 
@@ -53,6 +134,10 @@ Emit a markdown report with this exact shape:
 
 ```markdown
 # Correctness Review — round <N>
+
+## Closure of round <N-1> findings
+(Required for round_number ≥ 2; "N/A — round 1" otherwise.)
+<table per the grounding step>
 
 ## Findings
 
