@@ -221,19 +221,11 @@ Capture the returned PR URL.
 3. `mcp__plane__update_work_item` — set the ticket's state to the resolved review state.
 4. `mcp__plane__create_work_item_comment` — add: `PR opened: <pr-url>`.
 
-## Phase 7 — Worktree cleanup + final summary
+## Phase 7 — Final summary (worktree stays alive)
 
-1. Remove the worktree:
-   ```bash
-   git worktree remove <worktree-path>
-   ```
-   If removal fails (e.g., the worktree has uncommitted changes — shouldn't happen after a clean Phase 5, but surface it cleanly), print the manual recovery command and continue to step 2:
-   ```
-   Worktree removal failed at <worktree-path>: <error>
-   Run manually: git worktree remove <worktree-path> [--force]
-   ```
+Do **not** remove the worktree. It stays alive so `/review-pr` (and manual fixes) can push to the branch without recreating it. Cleanup happens post-merge.
 
-2. Print final summary:
+Print final summary:
 ```
 === SHIPPED: <TICKET-ID> ===
 
@@ -241,18 +233,20 @@ PR:       <pr-url>
 Spec:     docs/specs/TODO/<TICKET-ID>.spec.md
 Tests:    docs/specs/TODO/<TICKET-ID>.test-output.txt
 Branch:   <branch>
-Worktree: removed (was at <worktree-path>)
+Worktree: <worktree-path> (kept alive for review fixes)
 
 Plane: <ticket-id> → <new state>
        <pr-url> commented on ticket
 
 User's primary working tree: untouched.
 
-If CI fails and you need to push fixes, recreate the worktree:
-  git worktree add <worktree-path> <branch>
+To address PR review comments:
   cd <worktree-path>
-  # ... push fixes ...
+  /review-pr
+
+After merge, clean up:
   git worktree remove <worktree-path>
+  # Then run /wiki-after-merge <merge-sha> from the wiki dir
 ```
 
 Do not auto-update any project wiki — that happens post-merge once the merge SHA exists on `<default-branch>`. Run your project's post-merge wiki/docs update flow if you have one.
@@ -274,4 +268,4 @@ Do not auto-update any project wiki — that happens post-merge once the merge S
 - **Push rejected.** Should be rare in worktree mode (branch is freshly cut from the remote tip), but possible if the user pushed manually during Phase 2/3. Halt; do not force-push.
 - **gh pr create fails.** Most often: gh CLI not authenticated, or the user lacks repo write. Halt with the error.
 - **Plane state mismatch.** If no state matches review-equivalent, skip the state flip and report. Don't fail the whole skill.
-- **Worktree removal blocked.** `git worktree remove` failed in Phase 7 (often a stale lock or filesystem permission). Surface the error and the manual recovery (`git worktree remove --force`) but continue to print the final summary so the user has the PR URL. Never `--force` automatically — the worktree might hold uncommitted state worth recovering.
+- **Stale worktree from prior run.** Phase 1 checks for worktree path conflicts. If the path exists, it's likely a leftover from a previous `/ship-spec` whose PR already merged. Halt with the cleanup command — don't auto-remove, since it might hold uncommitted review fixes.
