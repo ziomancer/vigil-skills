@@ -1,0 +1,24 @@
+$ python sync.py install --dry-run
+  [WRITE/dry] skills/ship-spec\SKILL.md  (differ)
+  [WRITE/dry] skills/ship-spec\states.json  (src-only)
+  [WRITE/dry] skills/spec-cycle\SKILL.md  (differ)
+  [WRITE/dry] agents/spec-reviewer-conventions.md  (differ)
+  [WRITE/dry] agents/spec-reviewer-correctness.md  (differ)
+  [WRITE/dry] agents/spec-reviewer-edge-cases.md  (differ)
+
+Dry run - 6 action(s) would be applied.
+
+$ python sync.py status
+  [ dst-only] skills/peon-ping-config\SKILL.md
+  [ dst-only] skills/peon-ping-log\SKILL.md
+  [ dst-only] skills/peon-ping-toggle\SKILL.md
+  [ dst-only] skills/peon-ping-use\SKILL.md
+  [   differ] skills/ship-spec\SKILL.md
+  [ src-only] skills/ship-spec\states.json
+  [   differ] skills/spec-cycle\SKILL.md
+  [   differ] agents/spec-reviewer-conventions.md
+  [   differ] agents/spec-reviewer-correctness.md
+  [   differ] agents/spec-reviewer-edge-cases.md
+
+$ python -c "import json; json.load(open('skills/ship-spec/states.json'))"
+(exit 0 — valid JSON)

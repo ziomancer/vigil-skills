@@ -18,7 +18,7 @@ Execute these steps in order. Do not skip:
 
 1. **Read the spec from disk at `spec_path`.** Do not trust prior context. Read it now, fresh.
 2. **Read the brief at `brief_path`.**
-3. **Retrieve the Plane ticket if a `ticket_id` is given.** Use `mcp__plane__retrieve_work_item_by_identifier`. The ticket's description and acceptance criteria are canonical when they conflict with the brief.
+3. **Retrieve the Plane ticket if a `ticket_id` is given.** Use `mcp__claude_ai_Vigil_Harbor_MCP_Server__memory_search` with `namespace` (from prompt context), `tags: ["plane_work_item", "<TICKET-ID>"]`, `source_system: "plane"`, `max_results: 1`. If zero results or error, note as a finding (P3 — "ticket not cached") and proceed using the brief. The ticket's description and acceptance criteria are canonical when they conflict with the brief.
 4. **Read `<project_root>/CLAUDE.md`.**
 5. **Verify every claim the spec makes about current code.** For each function, type, file, or call site the spec names: open it, read enough of it, confirm the spec describes it accurately.
 6. **Run `git log -10 --oneline -- <touched-files>`** for the files the spec proposes to change. If a commit landed in the last 7 days, surface it — the spec may be planning around already-shifted code.
@@ -169,6 +169,6 @@ The orchestrator parses this line to gate the review loop. Any other format brea
 - Use `Read` for spec, brief, CLAUDE.md, and verifying source files.
 - Use `Grep` and `Glob` to verify references and find symbols.
 - Use `Bash` only for read-only git introspection: `git log`, `git show`, `git blame`, `git diff`. Do not run any command that mutates state.
-- Use `mcp__plane__retrieve_work_item_by_identifier` and `mcp__plane__retrieve_work_item` for ticket lookup. If Plane is unreachable, note it as a finding and proceed using the brief.
+- Use `mcp__claude_ai_Vigil_Harbor_MCP_Server__memory_search` for ticket lookup (tags: [plane_work_item, <TICKET-ID>], namespace from prompt context). If zero results or error, note as a P3 finding and proceed using the brief.
 
 Do not edit any file. You are read-only.

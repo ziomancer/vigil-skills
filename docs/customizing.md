@@ -63,7 +63,7 @@ Adjust the layout in your fork if needed; the skills hardcode these paths today.
 
 `/spec-cycle` and `/ship-spec` use the Plane MCP server for ticket lookup and state updates. Configure it per Plane's docs.
 
-`/ship-spec` flips a ticket to a review-equivalent state after PR open. The skill probes `mcp__plane__list_states` and prefers a started state matching `/review|qa|in.review/i`. If your Plane workspace has no such state, the skill skips the flip and reports the available states so you can update manually.
+`/ship-spec` flips a ticket to a review-equivalent state after PR open. The skill reads `skills/ship-spec/states.json` and uses the `review_state_id` field for the project. If your project isn't in `states.json` or has no `review_state_id`, the skill skips the flip and reports the available state names so you can update manually. To add a new project, run `mcp__plane__list_states` for the project and add an entry to `states.json`.
 
 ## Default branch
 
