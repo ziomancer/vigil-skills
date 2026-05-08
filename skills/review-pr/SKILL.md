@@ -33,7 +33,7 @@ If CodeRabbit shows "Review in progress" or "pending", tell the user to wait and
 Read `.coderabbit.yaml` from the repo root. Confirm `reviews.request_changes_workflow: true`. This is what enables CodeRabbit to auto-approve after all threads are resolved and pre-merge checks pass.
 
 If the file is missing or `request_changes_workflow` is not `true`, warn:
-```
+```text
 ⚠ request_changes_workflow is not enabled in .coderabbit.yaml.
 CodeRabbit will not auto-approve after thread resolution.
 Thread resolution will still work but the review verdict must be changed manually.
@@ -44,13 +44,13 @@ Proceed regardless — the skill still works for thread cleanup without auto-app
 ## Step 2: Fetch CodeRabbit review comments
 
 ```bash
-# Get all reviews — find the latest coderabbit-ai[bot] review (body needed for infra-error check below)
+# Get all reviews — find the latest coderabbitai[bot] review (body needed for infra-error check below)
 gh api repos/{owner}/{repo}/pulls/<N>/reviews \
-  --jq '[.[] | select(.user.login == "coderabbit-ai[bot]")] | sort_by(.submitted_at) | last | {id, state, submitted_at, body}'
+  --jq '[.[] | select(.user.login == "coderabbitai[bot]")] | sort_by(.submitted_at) | last | {id, state, submitted_at, body}'
 
 # Get inline comments from CodeRabbit
 gh api repos/{owner}/{repo}/pulls/<N>/comments \
-  --jq '[.[] | select(.user.login == "coderabbit-ai[bot]")]'
+  --jq '[.[] | select(.user.login == "coderabbitai[bot]")]'
 ```
 
 If the latest review body contains infrastructure errors — look for `"Failed to clone"`, `"🔥 Problems"`, or `"Please run the @coderabbitai full review"` — then post `@coderabbitai full review` as a PR comment to re-trigger the review, report "CodeRabbit hit an infrastructure error — re-triggered full review", and stop.
@@ -132,7 +132,7 @@ If no fixes were pushed (all skips/duplicates), skip to 6c.
 
 ```bash
 gh api repos/<OWNER>/<REPO>/pulls/<N>/reviews \
-  --jq '[.[] | select(.user.login == "coderabbit-ai[bot]")] | sort_by(.submitted_at) | last | .state'
+  --jq '[.[] | select(.user.login == "coderabbitai[bot]")] | sort_by(.submitted_at) | last | .state'
 ```
 
 If the verdict is already `APPROVED`, skip 6a/6b and go straight to 6e — CodeRabbit approved concurrently with or before the push landed; no need to wait.
@@ -146,7 +146,7 @@ PUSH_TIME=$(gh api repos/<OWNER>/<REPO>/commits/$HEAD_SHA --jq '.commit.author.d
 
 # Poll: is there a CodeRabbit review submitted after our push?
 gh api repos/<OWNER>/<REPO>/pulls/<N>/reviews \
-  --jq '[.[] | select(.user.login == "coderabbit-ai[bot]") | select(.submitted_at > "'"$PUSH_TIME"'")] | length'
+  --jq '[.[] | select(.user.login == "coderabbitai[bot]") | select(.submitted_at > "'"$PUSH_TIME"'")] | length'
 ```
 
 Poll by making **individual Bash tool calls** (not a single blocking loop) so the conversation stays responsive — the user can interject, correct, or cancel between checks. Check every 30 seconds, up to 5 minutes (10 attempts). If at timeout `gh pr checks <N>` still shows CodeRabbit "in_progress", extend the wait to 10 minutes total. If no CodeRabbit check is running at all, proceed — CodeRabbit may have decided the diff didn't warrant a re-review.
@@ -159,7 +159,7 @@ Once the incremental review lands, fetch its inline comments **filtered to the n
 
 ```bash
 gh api repos/<OWNER>/<REPO>/pulls/<N>/comments \
-  --jq '[.[] | select(.user.login == "coderabbit-ai[bot]") | select(.pull_request_review_id == <REVIEW_ID>)]'
+  --jq '[.[] | select(.user.login == "coderabbitai[bot]") | select(.pull_request_review_id == <REVIEW_ID>)]'
 ```
 
 If the new review has NEW findings not present in the original review:
@@ -167,7 +167,7 @@ If the new review has NEW findings not present in the original review:
 - Triage using Step 3 logic
 - If any are categorized as `fix`: apply fixes, run tests, commit, push, then loop back to 6a
 - **Cap at 3 fix-push-review cycles.** After 3 rounds, warn the user and proceed to 6c:
-  ```
+  ```text
   3 fix-push-review cycles completed. Remaining findings:
     - <list>
   Proceeding to resolve threads. Re-run /review-pr if needed.
@@ -191,7 +191,8 @@ This fires AFTER all incremental reviews have been triaged, so it resolves threa
 gh api graphql -f query='query {
   repository(owner:"<OWNER>", name:"<REPO>") {
     pullRequest(number:<N>) {
-      reviewThreads(first:50) {
+      reviewThreads(first:100) {
+        pageInfo { hasNextPage endCursor }
         nodes {
           isResolved
           path
@@ -202,12 +203,20 @@ gh api graphql -f query='query {
       }
     }
   }
-}' --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.comments.nodes[0].author.login == "coderabbit-ai[bot]")] | if map(.isResolved) | all then "all_resolved" else "unresolved_threads:\(map(select(.isResolved | not) | .path) | join(", "))" end'
+}' --jq '.data.repository.pullRequest.reviewThreads | {hasNextPage: .pageInfo.hasNextPage, threads: [.nodes[] | select(.comments.nodes[0].author.login == "coderabbitai[bot]")]}'
+```
+
+If `hasNextPage` is true, repeat with `reviewThreads(first:100, after:"<endCursor>")` and merge the `threads` arrays until `hasNextPage` is false. Then evaluate the merged set:
+
+```bash
+# On the merged threads array:
+# all_resolved if every thread's .isResolved is true
+# otherwise: unresolved_threads: <comma-separated .path values of unresolved threads>
 ```
 
 Poll every 15 seconds, up to 2 minutes. Thread resolution is fast — CodeRabbit usually processes the resolve command within seconds.
 
-If threads are NOT all resolved after timeout, warn and list the unresolved thread file paths (now available from the `path` field above). Do NOT report success.
+If threads are NOT all resolved after timeout, warn and list the unresolved thread file paths. Do NOT report success.
 
 **Phase 2 — Wait for review verdict to update.**
 
@@ -215,7 +224,7 @@ Once all threads are resolved, poll for the review verdict:
 
 ```bash
 gh api repos/<OWNER>/<REPO>/pulls/<N>/reviews \
-  --jq '[.[] | select(.user.login == "coderabbit-ai[bot]")] | sort_by(.submitted_at) | last | .state'
+  --jq '[.[] | select(.user.login == "coderabbitai[bot]")] | sort_by(.submitted_at) | last | .state'
 ```
 
 Poll every 20 seconds, up to 3 minutes. CodeRabbit's `request_changes_workflow` auto-approval fires after threads are resolved AND pre-merge checks pass.
@@ -227,7 +236,7 @@ Outcomes:
 
 ### 6e. Report
 
-```
+```text
 Review round complete for PR #<N>:
 - Fixed: X findings (list them)
 - Skipped: Y findings (list with reasons)
