@@ -35,7 +35,7 @@ Print a one-line preflight summary, then continue.
 
 Output path: `docs/specs/TODO/<TICKET-ID>.spec.md`.
 
-Read the brief, the linked Plane ticket (if reachable via `mcp__claude_ai_Vigil_Harbor_MCP_Server__memory_search` with the pattern below, using the namespace resolved at step 5), and any files the brief points at. Write a spec that covers, at minimum:
+Read the brief, the linked Plane ticket (call `mcp__claude_ai_Vigil_Harbor_MCP_Server__memory_search` with `tags: ["plane_work_item", "<TICKET-ID>"]`, `namespace` from step 5, `source_system: "plane"`, `max_results: 1`; if zero results or error, proceed using the brief alone), and any files the brief points at. Write a spec that covers, at minimum:
 
 - **Goal** — what this ships, in one paragraph
 - **Scope** — files to change, new files to create, files to leave alone
