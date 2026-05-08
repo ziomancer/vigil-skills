@@ -74,6 +74,7 @@ Each agent's prompt must include:
 - `brief_path: docs/specs/TODO/<TICKET-ID>.brief.md`
 - `project_root: <absolute>`
 - `ticket_id: <TICKET-ID>`
+- `namespace: <resolved from preflight step 5, default "plane">`
 - `round_number: <N>`
 
 For the conventions reviewer additionally:

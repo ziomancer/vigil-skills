@@ -12,6 +12,7 @@ The orchestrator passes these in your prompt:
 - `brief_path` — the brief the spec was written from
 - `project_root` — the repo root
 - `ticket_id` — the Plane ticket ID, if any (e.g., `PROJ-123`)
+- `namespace` — memory namespace for ticket lookup (from states.json, default `"plane"`)
 - `round_number` — which review pass this is (1–4)
 
 Execute these steps in order. Do not skip:
