@@ -27,7 +27,7 @@ Before anything else:
    - The wiki path, if any. If CLAUDE.md hardcodes a username-bearing path that doesn't exist on this machine, replace the username segment with the current user (Windows: `$env:USERNAME`; Unix: `$USER`) and re-check.
    - The project's wiki slug, if a wiki is configured (often the repo name in kebab-case).
 4. Confirm Plane MCP is reachable: call `mcp__plane__list_projects`. On failure, **warn and proceed** — the brief is the local source of truth.
-5. Read `~/.claude/skills/ship-spec/states.json` (installed by `sync.py`). If the file is not found, default all namespaces to `"plane"` and warn — ticket lookup still works (MCP-33 fallback namespace is `"plane"` for unmapped projects); namespace-scoped precision is degraded but not broken. If the file exists, look up the ticket prefix to get the `namespace`. If the prefix is not in `states.json`, default namespace to `"plane"` and warn. Pass `namespace` to Phase 1's own `memory_search` call and to each reviewer agent in step 2b.
+5. Read `~/.claude/skills/ship-spec/states.json` (installed by `sync.py`). If the file is not found, default `namespace` to `"plane"` and warn — ticket lookup still works (MCP-33 fallback namespace is `"plane"` for unmapped projects); namespace-scoped precision is degraded but not broken. If the file exists, extract the ticket prefix (the portion before the first hyphen in `ticket_id`, e.g., `"PROJ"` from `"PROJ-123"`) and look up that prefix in `states.json` to get the `namespace`. If the prefix is not in `states.json`, default `namespace` to `"plane"` and warn. Pass `namespace` to Phase 1's own `memory_search` call and to each reviewer agent in step 2b.
 
 Print a one-line preflight summary, then continue.
 
