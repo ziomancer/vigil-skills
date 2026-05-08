@@ -135,7 +135,7 @@ gh api repos/<OWNER>/<REPO>/pulls/<N>/reviews \
   --jq '[.[] | select(.user.login == "coderabbitai[bot]")] | sort_by(.submitted_at) | last | .state'
 ```
 
-If the verdict is already `APPROVED`, skip 6a/6b and go straight to 6e — CodeRabbit approved concurrently with or before the push landed; no need to wait.
+If the latest verdict is `APPROVED` **and its `submitted_at` is after `PUSH_TIME`**, skip 6a/6b and go straight to 6e — CodeRabbit has already reviewed the new commit and approved it. A pre-push `APPROVED` verdict must not short-circuit: the incoming incremental review may flip it back to `CHANGES_REQUESTED`.
 
 **Otherwise**, after pushing, CodeRabbit auto-triggers an incremental review of the new commit. Wait for it to land before resolving anything — otherwise the resolve may race with new findings from the re-review.
 
