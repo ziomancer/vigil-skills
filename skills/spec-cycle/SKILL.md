@@ -27,6 +27,7 @@ Before anything else:
    - The wiki path, if any. If CLAUDE.md hardcodes a username-bearing path that doesn't exist on this machine, replace the username segment with the current user (Windows: `$env:USERNAME`; Unix: `$USER`) and re-check.
    - The project's wiki slug, if a wiki is configured (often the repo name in kebab-case).
 4. Confirm Plane MCP is reachable: call `mcp__plane__list_projects`. On failure, **warn and proceed** — the brief is the local source of truth.
+5. Read `~/.claude/skills/ship-spec/states.json` (installed by `sync.py`). If the file is not found, default `namespace` to `"plane"` and warn — ticket lookup still works (MCP-33 fallback namespace is `"plane"` for unmapped projects); namespace-scoped precision is degraded but not broken. If the file exists but cannot be parsed (invalid JSON or unexpected shape), warn and default `namespace` to `"plane"`. Otherwise, extract the ticket prefix (the portion before the first hyphen in `ticket_id`, e.g., `"PROJ"` from `"PROJ-123"`) and look up that prefix in `states.json` to get the `namespace`. If the prefix is not in `states.json`, default `namespace` to `"plane"` and warn. Pass `namespace` to Phase 1's own `memory_search` call and to each reviewer agent in step 2b.
 
 Print a one-line preflight summary, then continue.
 
@@ -34,7 +35,7 @@ Print a one-line preflight summary, then continue.
 
 Output path: `docs/specs/TODO/<TICKET-ID>.spec.md`.
 
-Read the brief, the linked Plane ticket (if reachable), and any files the brief points at. Write a spec that covers, at minimum:
+Read the brief, the linked Plane ticket (call `mcp__claude_ai_Vigil_Harbor_MCP_Server__memory_search` with `tags: ["plane_work_item", "<TICKET-ID>"]`, `namespace` from step 5, `source_system: "plane"`, `max_results: 1`; if zero results or error, proceed using the brief alone), and any files the brief points at. Write a spec that covers, at minimum:
 
 - **Goal** — what this ships, in one paragraph
 - **Scope** — files to change, new files to create, files to leave alone
@@ -73,6 +74,7 @@ Each agent's prompt must include:
 - `brief_path: docs/specs/TODO/<TICKET-ID>.brief.md`
 - `project_root: <absolute>`
 - `ticket_id: <TICKET-ID>`
+- `namespace: <resolved from preflight step 5, default "plane">`
 - `round_number: <N>`
 
 For the conventions reviewer additionally:
@@ -205,7 +207,7 @@ After printing the checklist, **do not auto-proceed**. The user invokes `/ship-s
 - Read, Edit, Write for spec authorship and revision.
 - Bash for `git log` (read-only) and `mkdir` for review subdirs.
 - Agent calls (parallel) for the three reviewers.
-- mcp__plane__retrieve_work_item_by_identifier for Plane ticket fetch.
+- mcp__claude_ai_Vigil_Harbor_MCP_Server__memory_search for Plane ticket lookup (tags: [plane_work_item, <TICKET-ID>], namespace from states.json). Falls back to brief alone on zero results or error response.
 - Do not commit. Do not push. Do not open PRs. That's `/ship-spec`'s job.
 
 ## Failure modes to watch for
@@ -213,5 +215,5 @@ After printing the checklist, **do not auto-proceed**. The user invokes `/ship-s
 - **Stale spec read.** Always re-read from disk at the start of each round. Do not trust the spec content from your own prior write.
 - **Reviewer status drift.** If a reviewer doesn't end with a parseable `STATUS:` line, treat its report as `STATUS: RED P0=1 P1=0` (count one P0 for "missing status") and surface it as an issue.
 - **Severity inflation.** If a single reviewer is producing >5 P1 findings consistently, that's a signal to re-check whether the reviewer is following the severity definitions. The fix is to push back through the prompt — but in v1 just trust the loop.
-- **Plane unreachable.** Warn and proceed using only the brief. The brief is the local source of truth.
+- **Ticket not in MCP memory cache.** When `memory_search` returns zero results or an error for the ticket, warn-and-proceed using only the brief. The brief is the local source of truth. This covers cold-cache (ticket untouched since MCP-33 shipped) and MCP memory outage.
 - **Wiki path mismatch.** CLAUDE.md may hardcode a username-bearing wiki path. Try replacing the username with the current user (Windows: `$env:USERNAME`; Unix: `$USER`) and use whichever exists.

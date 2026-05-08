@@ -37,6 +37,7 @@ This skill assumes `/spec-cycle` has already produced a converged spec. It imple
 6. `git status --short` — informational only; the worktree flow in Phase 1 doesn't touch the user's primary tree, so uncommitted changes there don't gate this skill.
 7. `gh auth status` — confirm GitHub CLI is authenticated. Halt if not.
 8. `mcp__plane__list_projects` — confirm Plane MCP is reachable. Warn-and-proceed on failure.
+9. Read `skills/ship-spec/states.json` (from `~/.claude/skills/ship-spec/states.json` as installed by `sync.py`). Look up the ticket prefix (e.g., `MCP` from `MCP-33`). Confirm the prefix exists and has a `project_id` and `states` map. If the prefix is missing entirely, **halt** — the project must be added to states.json before ship-spec can manage it. If `review_state_id` is missing or empty, continue — Phase 6 will warn and skip the state flip.
 
 **Preflight notes:**
 - **Python tests, prefer module-form invocation.** When the resolved test command is Python-based, write it as `<interpreter> -m pytest …` (e.g., `python -m pytest`, or pin the interpreter with a full path like `<full-path-to-python> -m pytest`) rather than bare `pytest`. Bare `pytest` resolves to whichever `pytest` executable is first on `PATH`, which on multi-Python systems often points to an interpreter that doesn't have the project's deps installed. Module-form forces resolution into the same interpreter that has the deps. This is discipline at the spec/CLAUDE.md authoring layer; ship-spec passes the command through as-is.
@@ -213,11 +214,8 @@ Capture the returned PR URL.
 
 ## Phase 6 — Plane update
 
-1. Resolve the project: `mcp__plane__list_projects` → find the one whose identifier matches the ticket prefix (e.g., `PROJ` → "My Project").
-2. Discover the review-equivalent state: `mcp__plane__list_states` for that project.
-   - Prefer: `state.group == "started"` AND name matches `/review|qa|in.review/i`.
-   - Fallback: any state with `state.group == "started"`.
-   - If neither matches, **warn and skip the state flip** — print which states are available so the user can update manually.
+1. Read `states.json` (already loaded at preflight). Look up the ticket prefix to get `project_id` and `review_state_id`.
+2. Use `review_state_id` directly as the target state for the flip. If `review_state_id` is absent or empty, warn and skip the state flip — print available state names from `states.json` so the user can update manually.
 3. `mcp__plane__update_work_item` — set the ticket's state to the resolved review state.
 4. `mcp__plane__create_work_item_comment` — add: `PR opened: <pr-url>`.
 

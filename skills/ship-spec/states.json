@@ -1,0 +1,50 @@
+{
+  "MCP": {
+    "project_id": "98788c4e-f30f-466d-9562-19e28aa4e53e",
+    "namespace": "mcp",
+    "review_state_id": "f724dfef-38e4-4a3e-8b60-9bad988a6829",
+    "states": {
+      "Backlog": "e9a009e5-58e1-4b19-8441-b17e686fa304",
+      "Todo": "d8a725e9-d855-4df0-a515-11bd21e22dcb",
+      "Ready to Ship": "61f619ab-c9a8-44b1-8e17-bab92748b8a6",
+      "In Progress": "d003997d-ac55-4901-a412-7a149d43b414",
+      "Spec Authoring": "ed4867e6-3c99-4143-b313-ddc91eadfad5",
+      "Spec Review": "48e7cbfc-4cf0-448e-93de-5e894c24d057",
+      "In Review": "f724dfef-38e4-4a3e-8b60-9bad988a6829",
+      "Done": "2de7ddd1-932b-4bb5-b4b6-3af340134bf6",
+      "Cancelled": "c38e4b91-2e58-44d8-a1ed-0ab645c7b6e3"
+    }
+  },
+  "DYN": {
+    "project_id": "60c4d66a-0b83-477f-b848-a80fcd8ce72c",
+    "namespace": "dynasty",
+    "review_state_id": "2f177294-83d8-4c9a-b74d-03bbc6826593",
+    "states": {
+      "Backlog": "9590c0ce-406c-43f9-ad89-3020d9121721",
+      "Todo": "52277d44-ac3b-4698-8879-3366dc1b7dc0",
+      "Ready to Ship": "761587ce-90ab-45e3-b41a-ae5cceb77e4a",
+      "In Progress": "86e6bf8e-c596-4c13-853d-e695972442d1",
+      "Spec Authoring": "2b2bb01d-8eb8-4a46-acd2-a8cd28a4c5f3",
+      "Spec Review": "1c0c0587-02bf-48a3-9c01-98bd83894542",
+      "PR Review": "2f177294-83d8-4c9a-b74d-03bbc6826593",
+      "Done": "2f72aa3c-f999-4bf0-84aa-9b4f322a7e74",
+      "Cancelled": "1323fe07-3abf-405a-a969-20a4561e4244"
+    }
+  },
+  "VHS": {
+    "project_id": "401bddd2-6d35-48e4-9c4e-e6d4fbec819d",
+    "namespace": "vhs",
+    "review_state_id": "c0e933ae-0094-443a-8cdb-9eb4190441e3",
+    "states": {
+      "Backlog": "0b42a227-5e4c-4345-aa9d-61c05b336395",
+      "Todo": "9fe4453b-bf1c-4735-98b4-18db62bcb3ba",
+      "Ready to Ship": "ef90a3a5-628e-4a31-b069-244fe4c871ff",
+      "In Progress": "87718378-7a8e-4e1e-8296-78b78a6d6a22",
+      "Spec Authoring": "b33ab308-de4a-4610-992b-ed53e7e92d3e",
+      "Spec Review": "a50423f8-48a1-44ff-87e4-4f91d7eb10b9",
+      "PR Review": "c0e933ae-0094-443a-8cdb-9eb4190441e3",
+      "Done": "ba79301e-288a-48fa-8e66-4f8d8c66d618",
+      "Cancelled": "b54dfa77-bee0-49c0-b413-c862ed63cddc"
+    }
+  }
+}

@@ -12,6 +12,7 @@ The orchestrator passes these in your prompt:
 - `brief_path` — the brief the spec was written from
 - `project_root` — the repo root
 - `ticket_id` — the Plane ticket ID, if any
+- `namespace` — memory namespace for ticket lookup (from states.json, default `"plane"`)
 - `wiki_root` — absolute path to the project wiki, if one is configured (e.g., `~/code/myproject-wiki`). May be omitted if the project has no wiki.
 - `project_slug` — the project subdir under `<wiki_root>/projects/` (e.g., `myproject`, `my-service`). Only meaningful if `wiki_root` is set.
 - `round_number` — which review pass this is (1–4)
@@ -155,6 +156,6 @@ The **last non-blank line MUST be exactly one of**:
 
 - Use `Read`, `Grep`, `Glob` for spec, brief, CLAUDE.md, wiki pages, and source.
 - Use `Bash` only for read-only git introspection. Do not mutate state.
-- Use `mcp__plane__retrieve_work_item_by_identifier` for ticket lookup if needed.
+- Use `mcp__claude_ai_Vigil_Harbor_MCP_Server__memory_search` for ticket lookup if needed (tags: [plane_work_item, <TICKET-ID>], namespace from prompt context). If zero results or error, proceed using the brief.
 
 Do not edit any file. You are read-only.
