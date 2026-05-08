@@ -44,9 +44,9 @@ Proceed regardless — the skill still works for thread cleanup without auto-app
 ## Step 2: Fetch CodeRabbit review comments
 
 ```bash
-# Get all reviews — find the latest coderabbit-ai[bot] review
+# Get all reviews — find the latest coderabbit-ai[bot] review (body needed for infra-error check below)
 gh api repos/{owner}/{repo}/pulls/<N>/reviews \
-  --jq '[.[] | select(.user.login == "coderabbit-ai[bot]")] | sort_by(.submitted_at) | last | {id, state, submitted_at}'
+  --jq '[.[] | select(.user.login == "coderabbit-ai[bot]")] | sort_by(.submitted_at) | last | {id, state, submitted_at, body}'
 
 # Get inline comments from CodeRabbit
 gh api repos/{owner}/{repo}/pulls/<N>/comments \
@@ -128,22 +128,41 @@ Only if fixes were made:
 
 If no fixes were pushed (all skips/duplicates), skip to 6c.
 
-After pushing, CodeRabbit auto-triggers an incremental review of the new commit. Wait for it to land before resolving anything — otherwise the resolve may race with new findings from the re-review.
+**Before entering the wait loop, check the current verdict:**
 
 ```bash
-# Get our push timestamp
-PUSH_TIME=$(git log -1 --format='%aI')
+gh api repos/<OWNER>/<REPO>/pulls/<N>/reviews \
+  --jq '[.[] | select(.user.login == "coderabbit-ai[bot]")] | sort_by(.submitted_at) | last | .state'
+```
+
+If the verdict is already `APPROVED`, skip 6a/6b and go straight to 6e — CodeRabbit approved concurrently with or before the push landed; no need to wait.
+
+**Otherwise**, after pushing, CodeRabbit auto-triggers an incremental review of the new commit. Wait for it to land before resolving anything — otherwise the resolve may race with new findings from the re-review.
+
+```bash
+# Fetch the HEAD commit's author date from GitHub (always UTC — avoids local-timezone mismatch on Windows)
+HEAD_SHA=$(git rev-parse HEAD)
+PUSH_TIME=$(gh api repos/<OWNER>/<REPO>/commits/$HEAD_SHA --jq '.commit.author.date')
 
 # Poll: is there a CodeRabbit review submitted after our push?
 gh api repos/<OWNER>/<REPO>/pulls/<N>/reviews \
   --jq '[.[] | select(.user.login == "coderabbit-ai[bot]") | select(.submitted_at > "'"$PUSH_TIME"'")] | length'
 ```
 
-Poll every 30 seconds, up to 5 minutes (10 attempts). If at timeout `gh pr checks <N>` still shows CodeRabbit "in_progress", extend the wait to 10 minutes total. If no CodeRabbit check is running at all, proceed — CodeRabbit may have decided the diff didn't warrant a re-review.
+Poll by making **individual Bash tool calls** (not a single blocking loop) so the conversation stays responsive — the user can interject, correct, or cancel between checks. Check every 30 seconds, up to 5 minutes (10 attempts). If at timeout `gh pr checks <N>` still shows CodeRabbit "in_progress", extend the wait to 10 minutes total. If no CodeRabbit check is running at all, proceed — CodeRabbit may have decided the diff didn't warrant a re-review.
+
+When a new review is detected, capture its `id` for use in Step 6b.
 
 ### 6b. Triage new findings from incremental review
 
-Once the incremental review lands, fetch its inline comments (same API as Step 2). If the new review has NEW findings not present in the original review:
+Once the incremental review lands, fetch its inline comments **filtered to the new review's ID** (captured in 6a) to avoid re-triaging old comments from prior rounds:
+
+```bash
+gh api repos/<OWNER>/<REPO>/pulls/<N>/comments \
+  --jq '[.[] | select(.user.login == "coderabbit-ai[bot]") | select(.pull_request_review_id == <REVIEW_ID>)]'
+```
+
+If the new review has NEW findings not present in the original review:
 
 - Triage using Step 3 logic
 - If any are categorized as `fix`: apply fixes, run tests, commit, push, then loop back to 6a
@@ -175,6 +194,7 @@ gh api graphql -f query='query {
       reviewThreads(first:50) {
         nodes {
           isResolved
+          path
           comments(first:1) {
             nodes { author { login } }
           }
@@ -182,12 +202,12 @@ gh api graphql -f query='query {
       }
     }
   }
-}' --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.comments.nodes[0].author.login == "coderabbit-ai[bot]") | .isResolved] | if all then "all_resolved" else "unresolved_threads" end'
+}' --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.comments.nodes[0].author.login == "coderabbit-ai[bot]")] | if map(.isResolved) | all then "all_resolved" else "unresolved_threads:\(map(select(.isResolved | not) | .path) | join(", "))" end'
 ```
 
 Poll every 15 seconds, up to 2 minutes. Thread resolution is fast — CodeRabbit usually processes the resolve command within seconds.
 
-If threads are NOT all resolved after timeout, warn and list the unresolved thread file paths. Do NOT report success.
+If threads are NOT all resolved after timeout, warn and list the unresolved thread file paths (now available from the `path` field above). Do NOT report success.
 
 **Phase 2 — Wait for review verdict to update.**
 
