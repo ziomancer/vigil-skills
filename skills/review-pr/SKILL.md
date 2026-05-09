@@ -8,6 +8,8 @@ user_invocable: true
 
 Process one round of CodeRabbit review findings on a GitHub PR. Triage by severity, fix real issues, push, resolve threads.
 
+**Shell note:** All `gh api`, `git`, and `gh pr` commands use bash syntax (single quotes, `$()` expansion). Use the **Bash tool** for these commands, not PowerShell.
+
 ## Input parsing
 
 Parse the argument into a PR number:
@@ -16,11 +18,23 @@ Parse the argument into a PR number:
 - `/review-pr https://github.com/.../pull/8` → extract #8 from URL
 - `/review-pr` (no arg) → detect from current branch: `gh pr view --json number --jq .number`
 
-## Step 1: Detect repo and check state
+## Step 1: Detect repo, resolve working directory, and check state
 
 ```bash
 # Get owner/repo
 gh repo view --json owner,name --jq '.owner.login + "/" + .name'
+
+# Resolve the PR's head branch and find the right working directory
+PR_BRANCH=$(gh pr view <N> --json headRefName --jq .headRefName)
+# Check if the branch is checked out in a worktree
+git worktree list  # look for $PR_BRANCH in the output
+```
+
+If the PR branch is checked out in a worktree, use that worktree as the working directory for all subsequent steps (file reads, edits, git operations). If the branch is the current branch in the primary tree, use the primary tree. If the branch isn't checked out anywhere, check it out before proceeding.
+
+```bash
+# Get the PR's diff scope — helps contextualize findings and triage outside-diff comments
+gh pr diff <N> --stat
 
 # Check if CodeRabbit review is still pending
 gh pr checks <N>
@@ -95,10 +109,7 @@ Record the categorization and reason for each finding.
 For all findings categorized as `fix`:
 
 1. Apply the code fix using Edit tool
-2. After all fixes are applied, run the project's test suite. Discover the test command using the same priority as `/ship-spec`:
-   1. Read `<project_root>/CLAUDE.md` "Build & Run" section → form a combined command (build + test + lint)
-   2. Fallback: check `package.json` for a `test` script, `Makefile`, `pyproject.toml`, or other standard runners
-   3. If no test command found: warn but proceed — review-pr is fixing review comments, not authoring new features, so skipping tests is less critical than in ship-spec
+2. After all fixes are applied, run the project's test suite. Use the same test-command resolution as `/ship-spec` Phase 0 step 4: spec `## Test command` first, then `CLAUDE.md` "Build & Run" section. If no test command found: warn but proceed — review-pr is fixing review comments, not authoring new features, so skipping tests is less critical than in ship-spec
 3. If tests fail, fix the test failure before continuing
 4. If no findings were categorized as `fix`, skip this step entirely
 
@@ -235,7 +246,7 @@ If `hasNextPage` is true, repeat with `reviewThreads(first:100, after:"<endCurso
 # otherwise: unresolved_threads: <comma-separated .path values of unresolved threads>
 ```
 
-Poll every 15 seconds, up to 2 minutes. After each poll, observe how many CodeRabbit threads are resolved and how many are still unresolved. The skill does not attempt to correlate unresolved thread counts against finding counts — it simply observes and reports.
+Poll by making **individual Bash tool calls** (not a sleep loop — sleep loops are blocked in this environment). Check every 15 seconds, up to 2 minutes. After each poll, observe how many CodeRabbit threads are resolved and how many are still unresolved. The skill does not attempt to correlate unresolved thread counts against finding counts — it simply observes and reports.
 
 If after the 2-minute polling window some threads are still unresolved, report the unresolved thread file paths and the manual resolve command:
 
@@ -262,7 +273,7 @@ gh api repos/<OWNER>/<REPO>/pulls/<N>/reviews \
   --jq '[.[] | select(.user.login == "coderabbitai[bot]")] | sort_by(.submitted_at) | last | .state'
 ```
 
-Poll every 20 seconds, up to 3 minutes. CodeRabbit's `request_changes_workflow` auto-approval fires after threads are resolved AND pre-merge checks pass.
+Poll by making **individual Bash tool calls** every 20 seconds, up to 3 minutes. CodeRabbit's `request_changes_workflow` auto-approval fires after threads are resolved AND pre-merge checks pass.
 
 Outcomes:
 - `APPROVED`: success — CodeRabbit has lifted the reviewer block.
