@@ -26,16 +26,84 @@ Before anything else:
    - Test commands from the "Build & Run" section (e.g., for a TS monorepo: `npm test`, `npm run build`, `npm run lint` — use whatever your CLAUDE.md states).
    - The wiki path, if any. If CLAUDE.md hardcodes a username-bearing path that doesn't exist on this machine, replace the username segment with the current user (Windows: `$env:USERNAME`; Unix: `$USER`) and re-check.
    - The project's wiki slug, if a wiki is configured (often the repo name in kebab-case).
-4. Confirm Plane MCP is reachable: call `mcp__plane__list_projects`. On failure, **warn and proceed** — the brief is the local source of truth.
-5. Read `~/.claude/skills/ship-spec/states.json` (installed by `sync.py`). If the file is not found, default `namespace` to `"plane"` and warn — ticket lookup still works (MCP-33 fallback namespace is `"plane"` for unmapped projects); namespace-scoped precision is degraded but not broken. If the file exists but cannot be parsed (invalid JSON or unexpected shape), warn and default `namespace` to `"plane"`. Otherwise, extract the ticket prefix (the portion before the first hyphen in `ticket_id`, e.g., `"PROJ"` from `"PROJ-123"`) and look up that prefix in `states.json` to get the `namespace`. If the prefix is not in `states.json`, default `namespace` to `"plane"` and warn. Pass `namespace` to Phase 1's own `memory_search` call and to each reviewer agent in step 2b.
+4. Upstream staleness check.
 
-Print a one-line preflight summary, then continue.
+   a. **Detect upstream remote:**
+      ```bash
+      git remote get-url upstream 2>/dev/null
+      ```
+      If exit ≠ 0: log `upstream: skipped (no remote)` and continue to step 5.
+
+   b. **Resolve default branch:**
+      ```bash
+      git symbolic-ref refs/remotes/upstream/HEAD 2>/dev/null | sed 's|^refs/remotes/upstream/||'
+      ```
+      Returns the bare branch name (`main`, `master`, etc.) — the `sed` strip is required because the long-form output is `refs/remotes/upstream/main`. If this errors or returns empty, try `main` then `master` as literal fallbacks (check existence with `git rev-parse --verify upstream/main` / `upstream/master`). Capture the result as `<default-branch>`. If none resolve, log `upstream: skipped (cannot resolve default branch)` and continue to step 5.
+
+   c. **Refresh upstream refs:**
+      ```bash
+      timeout 30 git fetch upstream 2>/dev/null
+      ```
+      Network failure is non-fatal — proceed using whatever `upstream/*` refs are already local. The 30-second timeout bounds wall-clock cost on unresponsive remotes. Log `upstream: fetch failed (proceeding with available refs)` if exit ≠ 0; do not halt.
+
+   d. **Extract search terms from `<TICKET-ID>.brief.md`:**
+      Read the brief and extract:
+      - **File paths** (priority 1): tokens matching `[A-Za-z0-9_./+-]+\.[a-z]{1,4}` that contain `/` or end with a known code extension (`.ts`, `.js`, `.py`, `.md`, `.json`, `.yaml`, `.yml`, `.toml`, `.sh`, `.go`, `.rs`). Take the top 5.
+      - **Code identifiers** (priority 2): words inside backtick spans or fenced code blocks that match `[A-Za-z_][A-Za-z0-9_]{3,}` (camelCase, snake_case, PascalCase — ≥4 chars, avoids noise). Take the top 3.
+      - **Title words** (priority 3, fallback): non-stopword tokens ≥4 characters from the brief's `# ...` heading. Used only if priorities 1 and 2 yield nothing.
+
+      If no search terms can be extracted at all, log `upstream: skipped (no search terms extracted)` and continue to step 5.
+
+   e. **Run git log queries (parallel when both tiers have results):**
+      ```bash
+      # Paths-based (only if file paths were extracted in 4d):
+      git log upstream/<default-branch> --since="${SPEC_CYCLE_UPSTREAM_WINDOW:-90 days ago}" \
+          --oneline -n 20 -- <path1> <path2> ...
+
+      # Grep-based (only if code identifiers or title words were extracted in 4d):
+      git log upstream/<default-branch> --since="${SPEC_CYCLE_UPSTREAM_WINDOW:-90 days ago}" \
+          --oneline -n 20 --extended-regexp --grep="<term1>|<term2>|<term3>"
+      ```
+      If both tiers produced search terms, run both via two Bash tool calls in a single message (parallel). If only one tier produced terms, run that query alone. Union the results, deduplicate by SHA prefix.
+
+      If all queries return empty: log `upstream: clean (no relevant commits)` and continue to step 5.
+
+   f. **Behind-upstream check:**
+      ```bash
+      git rev-list --count HEAD..upstream/<default-branch>
+      ```
+      If count is 0: the fork is at or ahead of upstream. Even if relevant commits exist, they're already incorporated. Log `upstream: clean (at HEAD)` and continue to step 5.
+
+   g. **Halt on staleness:** If commits were found (step 4e) AND behind-count > 0 (step 4f), present the findings to the user and ask whether to proceed — standard conversational prompting, same pattern as ship-spec's Phase 3 test-gate halt:
+
+      ```text
+      UPSTREAM STALENESS: <N> recent upstream commits touch files/terms relevant to this brief.
+      Review before investing in a spec:
+        <SHA>  <subject>
+        ...
+
+      The fork is <M> commits behind upstream/<default-branch>.
+
+      What would you like to do?
+      1. Proceed anyway
+      2. Abort — re-evaluate brief or update fork
+      ```
+
+      Wait for the user's response.
+
+      - On `Proceed`: log `upstream: N stale commits — user proceeded` and continue to step 5.
+      - On `Abort`: halt with message `Spec-cycle aborted: upstream staleness — re-evaluate brief or update fork.`
+
+5. Confirm Plane MCP is reachable: call `mcp__plane__list_projects`. On failure, **warn and proceed** — the brief is the local source of truth.
+6. Read `~/.claude/skills/ship-spec/states.json` (installed by `sync.py`). If the file is not found, default `namespace` to `"plane"` and warn — ticket lookup still works (MCP-33 fallback namespace is `"plane"` for unmapped projects); namespace-scoped precision is degraded but not broken. If the file exists but cannot be parsed (invalid JSON or unexpected shape), warn and default `namespace` to `"plane"`. Otherwise, extract the ticket prefix (the portion before the first hyphen in `ticket_id`, e.g., `"PROJ"` from `"PROJ-123"`) and look up that prefix in `states.json` to get the `namespace`. If the prefix is not in `states.json`, default `namespace` to `"plane"` and warn. Pass `namespace` to Phase 1's own `memory_search` call and to each reviewer agent in step 2b.
+
+Print a one-line preflight summary — including the upstream check result token (clean / skipped / N stale — user proceeded) — then continue.
 
 ## Phase 1 — Author v1 spec
 
 Output path: `docs/specs/TODO/<TICKET-ID>.spec.md`.
 
-Read the brief, the linked Plane ticket (call `mcp__claude_ai_Vigil_Harbor_MCP_Server__memory_search` with `tags: ["plane_work_item", "<TICKET-ID>"]`, `namespace` from step 5, `source_system: "plane"`, `max_results: 1`; if zero results or error, proceed using the brief alone), and any files the brief points at. Write a spec that covers, at minimum:
+Read the brief, the linked Plane ticket (call `mcp__claude_ai_Vigil_Harbor_MCP_Server__memory_search` with `tags: ["plane_work_item", "<TICKET-ID>"]`, `namespace` from step 6, `source_system: "plane"`, `max_results: 1`; if zero results or error, proceed using the brief alone), and any files the brief points at. Write a spec that covers, at minimum:
 
 - **Goal** — what this ships, in one paragraph
 - **Scope** — files to change, new files to create, files to leave alone
@@ -74,7 +142,7 @@ Each agent's prompt must include:
 - `brief_path: docs/specs/TODO/<TICKET-ID>.brief.md`
 - `project_root: <absolute>`
 - `ticket_id: <TICKET-ID>`
-- `namespace: <resolved from preflight step 5, default "plane">`
+- `namespace: <resolved from preflight step 6, default "plane">`
 - `round_number: <N>`
 
 For the conventions reviewer additionally:
@@ -205,7 +273,7 @@ After printing the checklist, **do not auto-proceed**. The user invokes `/ship-s
 ## Tool-use notes
 
 - Read, Edit, Write for spec authorship and revision.
-- Bash for `git log` (read-only) and `mkdir` for review subdirs.
+- Bash for `git fetch upstream` (ref update only, bounded by timeout), `git log` / `git remote` / `git rev-list` / `git symbolic-ref` / `sed` (read-only), and `mkdir` for review subdirs.
 - Agent calls (parallel) for the three reviewers.
 - mcp__claude_ai_Vigil_Harbor_MCP_Server__memory_search for Plane ticket lookup (tags: [plane_work_item, <TICKET-ID>], namespace from states.json). Falls back to brief alone on zero results or error response.
 - Do not commit. Do not push. Do not open PRs. That's `/ship-spec`'s job.
@@ -217,3 +285,5 @@ After printing the checklist, **do not auto-proceed**. The user invokes `/ship-s
 - **Severity inflation.** If a single reviewer is producing >5 P1 findings consistently, that's a signal to re-check whether the reviewer is following the severity definitions. The fix is to push back through the prompt — but in v1 just trust the loop.
 - **Ticket not in MCP memory cache.** When `memory_search` returns zero results or an error for the ticket, warn-and-proceed using only the brief. The brief is the local source of truth. This covers cold-cache (ticket untouched since MCP-33 shipped) and MCP memory outage.
 - **Wiki path mismatch.** CLAUDE.md may hardcode a username-bearing wiki path. Try replacing the username with the current user (Windows: `$env:USERNAME`; Unix: `$USER`) and use whichever exists.
+- **Upstream remote missing or unreachable.** Skip silently — vigil-harbor's own repos will hit this branch by design. CAL is the lone fork today. Cost: one sub-millisecond `git remote get-url` call.
+- **Search-term extraction false negative.** The heuristic is best-effort. A missed upstream commit means the user pays the pre-VHS-6 wasted-rounds cost; no worse than today.

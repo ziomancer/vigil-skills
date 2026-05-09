@@ -1,0 +1,10 @@
+  [ dst-only] skills/peon-ping-config\SKILL.md
+  [ dst-only] skills/peon-ping-log\SKILL.md
+  [ dst-only] skills/peon-ping-toggle\SKILL.md
+  [ dst-only] skills/peon-ping-use\SKILL.md
+  [   differ] skills/review-pr\SKILL.md
+  [   differ] skills/ship-spec\states.json
+  [   differ] skills/spec-cycle\SKILL.md
+22
+2
+2
