@@ -144,9 +144,13 @@ Per-thread `Resolved in <sha>` replies on fix-categorized finding threads are th
 
 If no fixes were pushed (all skips/duplicates/already-fixed), skip to 6d.
 
-**Before entering the wait loop, check the current verdict:**
+**Before entering the wait loop, capture push time and check the current verdict:**
 
 ```bash
+# Fetch the HEAD commit's author date from GitHub (always UTC — avoids local-timezone mismatch on Windows)
+HEAD_SHA=$(git rev-parse HEAD)
+PUSH_TIME=$(gh api repos/<OWNER>/<REPO>/commits/$HEAD_SHA --jq '.commit.author.date')
+
 gh api repos/<OWNER>/<REPO>/pulls/<N>/reviews \
   --jq '[.[] | select(.user.login == "coderabbitai[bot]")] | sort_by(.submitted_at) | last | .state'
 ```
@@ -156,10 +160,6 @@ If the latest verdict is `APPROVED` **and its `submitted_at` is after `PUSH_TIME
 **Otherwise**, after pushing, CodeRabbit auto-triggers an incremental review of the new commit. Wait for it to land before resolving anything — otherwise the resolve may race with new findings from the re-review.
 
 ```bash
-# Fetch the HEAD commit's author date from GitHub (always UTC — avoids local-timezone mismatch on Windows)
-HEAD_SHA=$(git rev-parse HEAD)
-PUSH_TIME=$(gh api repos/<OWNER>/<REPO>/commits/$HEAD_SHA --jq '.commit.author.date')
-
 # Poll: is there a CodeRabbit review submitted after our push?
 gh api repos/<OWNER>/<REPO>/pulls/<N>/reviews \
   --jq '[.[] | select(.user.login == "coderabbitai[bot]") | select(.submitted_at > "'"$PUSH_TIME"'")] | length'
@@ -235,7 +235,7 @@ gh api graphql -f query='query {
       }
     }
   }
-}' --jq '.data.repository.pullRequest.reviewThreads | {hasNextPage: .pageInfo.hasNextPage, threads: [.nodes[] | select(.comments.nodes[0].author.login == "coderabbitai[bot]")]}'
+}' --jq '.data.repository.pullRequest.reviewThreads | {hasNextPage: .pageInfo.hasNextPage, endCursor: .pageInfo.endCursor, threads: [.nodes[] | select(.comments.nodes[0].author.login == "coderabbitai[bot]")]}'
 ```
 
 If `hasNextPage` is true, repeat with `reviewThreads(first:100, after:"<endCursor>")` and merge the `threads` arrays until `hasNextPage` is false. Then evaluate the merged set:
