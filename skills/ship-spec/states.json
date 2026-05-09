@@ -1,4 +1,5 @@
 {
+  "_note": "Intentionally partial — covers only projects that use /spec-cycle today (MCP, DYN, VHS). Add an entry when onboarding a new project. State UUIDs fetched from Plane 2026-05-08; refresh if project workflows change.",
   "MCP": {
     "project_id": "98788c4e-f30f-466d-9562-19e28aa4e53e",
     "namespace": "mcp",
