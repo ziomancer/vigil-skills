@@ -194,14 +194,16 @@ Poll by making **individual Bash tool calls** every 15 seconds. Note the wall-cl
 - **CodeRabbit check returns `FAILURE`:** set `REVIEW_SIGNAL=ci-check (FAILURE)`. CodeRabbit errored — no incremental findings expected. Proceed to 6d (skip 6b).
 
 - **CodeRabbit check returns `NONE` (no check found):** Track how long since `FIRST_POLL_TIME`. Early `NONE` results are expected (push-to-check registration race). After 1 minute of continuous `NONE`, fall back to reviews-API poll for the remaining time (up to 5 minutes total from first poll). Set `REVIEW_SIGNAL=reviews-api-fallback`.
+
+  Substitute the actual ISO8601 timestamp captured from `PUSH_TIME` (conversational state) in place of `<PUSH_TIME_ISO8601_LITERAL>` before invoking each Bash tool call — shell variables are not shared between individual calls.
   ```bash
   # Detection query (returns count):
   gh api repos/<OWNER>/<REPO>/pulls/<N>/reviews \
-    --jq '[.[] | select(.user.login == "coderabbitai[bot]") | select(.submitted_at > "'"$PUSH_TIME"'")] | length'
+    --jq '[.[] | select(.user.login == "coderabbitai[bot]") | select(.submitted_at > "<PUSH_TIME_ISO8601_LITERAL>")] | length'
 
   # Once count > 0, capture the review ID:
   gh api repos/<OWNER>/<REPO>/pulls/<N>/reviews \
-    --jq '[.[] | select(.user.login == "coderabbitai[bot]") | select(.submitted_at > "'"$PUSH_TIME"'")] | last | .id'
+    --jq '[.[] | select(.user.login == "coderabbitai[bot]") | select(.submitted_at > "<PUSH_TIME_ISO8601_LITERAL>")] | last | .id'
   ```
   When a new review is detected, capture its `id` for Step 6b. If timeout with no new review, proceed to 6d — CodeRabbit may have decided the diff didn't warrant a re-review.
 
