@@ -1,0 +1,32 @@
+﻿=== Test gate output for VHS-3 ===
+Date: 2026-05-08 21:30:54
+
+--- sync.py status ---
+[ dst-only] skills/peon-ping-config\SKILL.md
+  [ dst-only] skills/peon-ping-log\SKILL.md
+  [ dst-only] skills/peon-ping-toggle\SKILL.md
+  [ dst-only] skills/peon-ping-use\SKILL.md
+  [   differ] skills/review-pr\SKILL.md
+
+--- @coderabbitai resolve occurrences ---
+  130: Per-thread `Resolved in <sha>` replies on fix-categorized finding threads are the primary closure mechanism. Threads for non-fix findings (skip/duplicate/already-fixed) are left open for CodeRabbit and the user to handle naturally. Auto-approval (`APPROVED` verdict) requires all threads resolved AND `request_changes_workflow: true` AND pre-merge checks passing. The skill never posts `@coderabbitai resolve` — if threads don't auto-resolve on hash reply, the report offers the manual command.
+  246: To force-resolve all threads: gh pr comment <N> --body "@coderabbitai resolve"
+  284: [If fix-threads unresolved: "N fix-threads still unresolved — to force-resolve: gh pr comment <N> --body '@coderabbitai resolve'"]
+  297: - **Stale CHANGES_REQUESTED with no new findings**: no new findings → no triage → report "no findings but N prior-round threads still open" with manual resolve command (`gh pr comment <N> --body "@coderabbitai resolve"`)
+
+All 4 occurrences are in explanatory prose, report templates, or edge cases.
+Zero occurrences in automated steps. PASS.
+
+--- per-thread reply pattern ---
+  3: description: Triage and fix CodeRabbit review comments on a PR. Verifies findings against current code, fixes real issues, pushes, posts per-thread commit-hash replies, waits for CodeRabbit's incremental re-review, and polls for auto-approval.
+  193: repos/<OWNER>/<REPO>/pulls/<N>/comments/<COMMENT_ID>/replies \
+PASS.
+
+--- SHA capture ---
+  122: HEAD_SHORT_SHA=$(git rev-parse --short HEAD)
+  173: - If any are categorized as `fix`: apply fixes, run tests, commit, push, capture `HEAD_SHORT_SHA=$(git rev-parse --short HEAD)`, post per-thread replies for this round's fix-categorized findings (same mechanism as Step 6c), then loop back to 6a
+PASS.
+
+--- CLAUDE.md per-thread update ---
+  45: Standalone skill for triaging CodeRabbit review comments. Reads findings, verifies against current code, fixes real issues, pushes, posts per-thread commit-hash replies (`Resolved in <sha>`), waits for CodeRabbit's incremental re-review, and polls for auto-approval. Non-fix threads (skip/duplicate/already-fixed) are left open for CodeRabbit and the user to handle naturally. Checks `.coderabbit.yaml` for `request_changes_workflow: true` to determine whether auto-approval is expected.
+PASS.
