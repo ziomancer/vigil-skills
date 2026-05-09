@@ -26,11 +26,14 @@ gh repo view --json owner,name --jq '.owner.login + "/" + .name'
 
 # Resolve the PR's head branch and find the right working directory
 PR_BRANCH=$(gh pr view <N> --json headRefName --jq .headRefName)
-# Check if the branch is checked out in a worktree
-git worktree list  # look for $PR_BRANCH in the output
+# Exact-match the branch against worktree list (porcelain column: path + HEAD + branch)
+WORKTREE_PATH=$(git worktree list --porcelain | awk -v b="$PR_BRANCH" '
+  /^worktree /{ wt=$2 }
+  /^branch /{ if ($2 == "refs/heads/" b) print wt }
+')
 ```
 
-If the PR branch is checked out in a worktree, use that worktree as the working directory for all subsequent steps (file reads, edits, git operations). If the branch is the current branch in the primary tree, use the primary tree. If the branch isn't checked out anywhere, check it out before proceeding.
+If `WORKTREE_PATH` is non-empty, use it as the working directory for all subsequent steps (file reads, edits, git operations). If the branch is the current branch in the primary tree (`git branch --show-current` matches `$PR_BRANCH`), use the primary tree. If the branch isn't checked out anywhere, check it out before proceeding.
 
 ```bash
 # Get the PR's diff scope — helps contextualize findings and triage outside-diff comments
@@ -147,9 +150,9 @@ If no fixes were pushed (all skips/duplicates/already-fixed), skip to 6d.
 **Before entering the wait loop, capture push time and check the current verdict:**
 
 ```bash
-# Fetch the HEAD commit's author date from GitHub (always UTC — avoids local-timezone mismatch on Windows)
+# Fetch the HEAD commit's committer date from GitHub (always UTC — avoids local-timezone mismatch on Windows)
 HEAD_SHA=$(git rev-parse HEAD)
-PUSH_TIME=$(gh api repos/<OWNER>/<REPO>/commits/$HEAD_SHA --jq '.commit.author.date')
+PUSH_TIME=$(gh api repos/<OWNER>/<REPO>/commits/$HEAD_SHA --jq '.commit.committer.date')
 
 gh api repos/<OWNER>/<REPO>/pulls/<N>/reviews \
   --jq '[.[] | select(.user.login == "coderabbitai[bot]")] | sort_by(.submitted_at) | last | {state, submitted_at}'
