@@ -1,12 +1,14 @@
 ---
 name: review-pr
-description: Triage and fix CodeRabbit review comments on a PR. Verifies findings against current code, fixes real issues, pushes, waits for CodeRabbit's incremental re-review, resolves threads, and polls for auto-approval.
+description: Triage and fix CodeRabbit review comments on a PR. Verifies findings against current code, fixes real issues, pushes, posts per-thread commit-hash replies, waits for CodeRabbit's incremental re-review, and polls for auto-approval.
 user_invocable: true
 ---
 
 # /review-pr — CodeRabbit review round handler
 
 Process one round of CodeRabbit review findings on a GitHub PR. Triage by severity, fix real issues, push, resolve threads.
+
+**Shell note:** All `gh api`, `git`, and `gh pr` commands use bash syntax (single quotes, `$()` expansion). Use the **Bash tool** for these commands, not PowerShell.
 
 ## Input parsing
 
@@ -16,11 +18,26 @@ Parse the argument into a PR number:
 - `/review-pr https://github.com/.../pull/8` → extract #8 from URL
 - `/review-pr` (no arg) → detect from current branch: `gh pr view --json number --jq .number`
 
-## Step 1: Detect repo and check state
+## Step 1: Detect repo, resolve working directory, and check state
 
 ```bash
 # Get owner/repo
 gh repo view --json owner,name --jq '.owner.login + "/" + .name'
+
+# Resolve the PR's head branch and find the right working directory
+PR_BRANCH=$(gh pr view <N> --json headRefName --jq .headRefName)
+# Exact-match the branch against worktree list (porcelain column: path + HEAD + branch)
+WORKTREE_PATH=$(git worktree list --porcelain | awk -v b="$PR_BRANCH" '
+  /^worktree /{ wt=$2 }
+  /^branch /{ if ($2 == "refs/heads/" b) print wt }
+')
+```
+
+If `WORKTREE_PATH` is non-empty, use it as the working directory for all subsequent steps (file reads, edits, git operations). If the branch is the current branch in the primary tree (`git branch --show-current` matches `$PR_BRANCH`), use the primary tree. If the branch isn't checked out anywhere, check it out before proceeding.
+
+```bash
+# Get the PR's diff scope — helps contextualize findings and triage outside-diff comments
+gh pr diff <N> --stat
 
 # Check if CodeRabbit review is still pending
 gh pr checks <N>
@@ -95,10 +112,7 @@ Record the categorization and reason for each finding.
 For all findings categorized as `fix`:
 
 1. Apply the code fix using Edit tool
-2. After all fixes are applied, run the project's test suite. Discover the test command using the same priority as `/ship-spec`:
-   1. Read `<project_root>/CLAUDE.md` "Build & Run" section → form a combined command (build + test + lint)
-   2. Fallback: check `package.json` for a `test` script, `Makefile`, `pyproject.toml`, or other standard runners
-   3. If no test command found: warn but proceed — review-pr is fixing review comments, not authoring new features, so skipping tests is less critical than in ship-spec
+2. After all fixes are applied, run the project's test suite. Use the same test-command resolution as `/ship-spec` Phase 0 step 4: spec `## Test command` first, then `CLAUDE.md` "Build & Run" section. If no test command found: warn but proceed — review-pr is fixing review comments, not authoring new features, so skipping tests is less critical than in ship-spec
 3. If tests fail, fix the test failure before continuing
 4. If no findings were categorized as `fix`, skip this step entirely
 
@@ -117,33 +131,38 @@ Only if fixes were made:
    Co-Authored-By: Claude <noreply@anthropic.com>
    ```
 3. Push to the PR branch
+4. Capture the resolving commit SHA and post per-thread replies:
+   ```bash
+   HEAD_SHORT_SHA=$(git rev-parse --short HEAD)
+   ```
+   For each fix-categorized finding from this round, post an inline reply on the originating review-comment thread (see Step 6c for the reply mechanism and error handling). Then continue to Step 6a.
 
-**Note:** Pushing triggers CodeRabbit's auto-incremental review of the new commit. Step 6 waits for it before resolving threads.
+**Note:** Pushing triggers CodeRabbit's auto-incremental review of the new commit. Step 6 waits for it before attempting thread resolution.
 
-## Step 6: Wait for re-review, resolve threads, poll for approval
+## Step 6: Wait for re-review, verify thread resolution, poll for approval
 
-`@coderabbitai resolve` **only marks conversation threads as resolved** — it does NOT change the GitHub review verdict. Auto-approval is a separate async action: CodeRabbit submits an `APPROVED` verdict only when `request_changes_workflow: true` AND all threads are resolved AND all pre-merge checks pass. The flow below respects this lifecycle.
+Per-thread `Resolved in <sha>` replies on fix-categorized finding threads are the primary closure mechanism. Threads for non-fix findings (skip/duplicate/already-fixed) are left open for CodeRabbit and the user to handle naturally. Auto-approval (`APPROVED` verdict) requires all threads resolved AND `request_changes_workflow: true` AND pre-merge checks passing. The skill never posts `@coderabbitai resolve` — if threads don't auto-resolve on hash reply, the report offers the manual command.
 
 ### 6a. Wait for CodeRabbit's incremental review (only if fixes were pushed)
 
-If no fixes were pushed (all skips/duplicates), skip to 6c.
+If no fixes were pushed (all skips/duplicates/already-fixed), skip to 6d.
 
-**Before entering the wait loop, check the current verdict:**
+**Before entering the wait loop, capture push time and check the current verdict:**
 
 ```bash
+# Fetch the HEAD commit's committer date from GitHub (always UTC — avoids local-timezone mismatch on Windows)
+HEAD_SHA=$(git rev-parse HEAD)
+PUSH_TIME=$(gh api repos/<OWNER>/<REPO>/commits/$HEAD_SHA --jq '.commit.committer.date')
+
 gh api repos/<OWNER>/<REPO>/pulls/<N>/reviews \
-  --jq '[.[] | select(.user.login == "coderabbitai[bot]")] | sort_by(.submitted_at) | last | .state'
+  --jq '[.[] | select(.user.login == "coderabbitai[bot]")] | sort_by(.submitted_at) | last | {state, submitted_at}'
 ```
 
-If the latest verdict is `APPROVED` **and its `submitted_at` is after `PUSH_TIME`**, skip 6a/6b and go straight to 6e — CodeRabbit has already reviewed the new commit and approved it. A pre-push `APPROVED` verdict must not short-circuit: the incoming incremental review may flip it back to `CHANGES_REQUESTED`.
+If the latest verdict's `state` is `APPROVED` **and its `submitted_at` is after `PUSH_TIME`**, skip 6a/6b and go straight to 6e — CodeRabbit has already reviewed the new commit and approved it. A pre-push `APPROVED` verdict must not short-circuit: the incoming incremental review may flip it back to `CHANGES_REQUESTED`.
 
 **Otherwise**, after pushing, CodeRabbit auto-triggers an incremental review of the new commit. Wait for it to land before resolving anything — otherwise the resolve may race with new findings from the re-review.
 
 ```bash
-# Fetch the HEAD commit's author date from GitHub (always UTC — avoids local-timezone mismatch on Windows)
-HEAD_SHA=$(git rev-parse HEAD)
-PUSH_TIME=$(gh api repos/<OWNER>/<REPO>/commits/$HEAD_SHA --jq '.commit.author.date')
-
 # Poll: is there a CodeRabbit review submitted after our push?
 gh api repos/<OWNER>/<REPO>/pulls/<N>/reviews \
   --jq '[.[] | select(.user.login == "coderabbitai[bot]") | select(.submitted_at > "'"$PUSH_TIME"'")] | length'
@@ -165,27 +184,43 @@ gh api repos/<OWNER>/<REPO>/pulls/<N>/comments \
 If the new review has NEW findings not present in the original review:
 
 - Triage using Step 3 logic
-- If any are categorized as `fix`: apply fixes, run tests, commit, push, then loop back to 6a
-- **Cap at 3 fix-push-review cycles.** After 3 rounds, warn the user and proceed to 6c:
+- If any are categorized as `fix`: apply fixes, run tests, commit, push, capture `HEAD_SHORT_SHA=$(git rev-parse --short HEAD)`, post per-thread replies for this round's fix-categorized findings (same mechanism as Step 6c), then loop back to 6a
+- **Cap at 3 fix-push-review cycles.** After 3 rounds, warn the user and proceed to 6d:
   ```text
   3 fix-push-review cycles completed. Remaining findings:
     - <list>
-  Proceeding to resolve threads. Re-run /review-pr if needed.
+  Proceeding to check thread resolution status. Re-run /review-pr if needed.
   ```
 
-If the incremental review has no new actionable findings (or only duplicates/already-fixed), proceed to 6c.
+If the incremental review has no new actionable findings (or only duplicates/already-fixed), proceed to 6d.
 
-### 6c. Post resolve
+### 6c. Per-thread commit-hash replies (mechanism)
+
+Step 6c is not a standalone post-loop step — per-thread replies are posted immediately after each push (Step 5 and each Step 6b fix-push cycle). This ensures each reply contains the correct SHA for the round that fixed the finding.
+
+**Reply mechanism:**
+
+For each fix-categorized finding from the current round, post an inline reply on the originating review-comment thread:
 
 ```bash
-gh pr comment <N> --body "@coderabbitai resolve"
+gh api -X POST \
+  repos/<OWNER>/<REPO>/pulls/<N>/comments/<COMMENT_ID>/replies \
+  -f body="Resolved in <HEAD_SHORT_SHA>"
 ```
 
-This fires AFTER all incremental reviews have been triaged, so it resolves threads that have been genuinely addressed.
+Where `<COMMENT_ID>` is the review-comment ID from the finding's triage. For findings from Step 3 (initial triage), the comment ID comes from Step 2's inline-comment fetch. For findings from Step 6b (incremental review triage), the comment ID comes from the incremental review's comment fetch (filtered to the new review ID). Each round uses its own comment IDs.
+
+**Guard for body-level findings:** If a fix-categorized finding has no associated comment ID (e.g., a review-body-level nitpick that was categorized as fix), skip the reply for that finding. Note the skip in the Step 6e report: `Reply skipped: finding has no inline comment ID (review-body-level)`.
+
+**Error handling:** If a reply call fails (404 = comment deleted, 403 = permission issue, 422 = thread locked, 429 = rate limited), log the failure and continue. Do not abort the loop. On 429 with a `Retry-After` header, wait the indicated duration and retry once. Failed reply count is reported in Step 6e.
+
+**If no findings were fix-categorized** (all non-fix, no push), no replies are posted.
 
 ### 6d. Poll for thread resolution + approval
 
-**Phase 1 — Wait for threads to resolve.**
+**Short-circuit:** If no fix-categorized findings exist across ALL rounds of this run (not just the current round), skip Phase 1 entirely — no fix-threads to wait for. If prior rounds had fix-categorized findings, poll to observe their resolution status even if the current round had no fixes.
+
+**Phase 1 — Observe thread resolution status.**
 
 ```bash
 gh api graphql -f query='query {
@@ -203,7 +238,7 @@ gh api graphql -f query='query {
       }
     }
   }
-}' --jq '.data.repository.pullRequest.reviewThreads | {hasNextPage: .pageInfo.hasNextPage, threads: [.nodes[] | select(.comments.nodes[0].author.login == "coderabbitai[bot]")]}'
+}' --jq '.data.repository.pullRequest.reviewThreads | {hasNextPage: .pageInfo.hasNextPage, endCursor: .pageInfo.endCursor, threads: [.nodes[] | select(.comments.nodes[0].author.login == "coderabbitai[bot]")]}'
 ```
 
 If `hasNextPage` is true, repeat with `reviewThreads(first:100, after:"<endCursor>")` and merge the `threads` arrays until `hasNextPage` is false. Then evaluate the merged set:
@@ -214,45 +249,73 @@ If `hasNextPage` is true, repeat with `reviewThreads(first:100, after:"<endCurso
 # otherwise: unresolved_threads: <comma-separated .path values of unresolved threads>
 ```
 
-Poll every 15 seconds, up to 2 minutes. Thread resolution is fast — CodeRabbit usually processes the resolve command within seconds.
+Poll by making **individual Bash tool calls** (not a sleep loop — sleep loops are blocked in this environment). Check every 15 seconds, up to 2 minutes. After each poll, observe how many CodeRabbit threads are resolved and how many are still unresolved. The skill does not attempt to correlate unresolved thread counts against finding counts — it simply observes and reports.
 
-If threads are NOT all resolved after timeout, warn and list the unresolved thread file paths. Do NOT report success.
+If after the 2-minute polling window some threads are still unresolved, report the unresolved thread file paths and the manual resolve command:
+
+```text
+N CodeRabbit threads still unresolved after 2min:
+  - <path1>
+  - <path2>
+To force-resolve all threads: gh pr comment <N> --body "@coderabbitai resolve"
+```
+
+Do not auto-fire the command.
 
 **Phase 2 — Wait for review verdict to update.**
 
-Once all threads are resolved, poll for the review verdict:
+**Enter Phase 2 only if ALL CodeRabbit threads are resolved.** This means:
+- If all threads resolved (all findings were fix-categorized and all fix-threads resolved) → enter Phase 2
+- If any threads unresolved (non-fix threads open, or fix-threads stuck) → **skip Phase 2**; report that `CHANGES_REQUESTED` is expected while threads remain open
+- If `request_changes_workflow` is not enabled (per Step 1b) → skip Phase 2 as before
+
+Once entered, poll for the review verdict:
 
 ```bash
 gh api repos/<OWNER>/<REPO>/pulls/<N>/reviews \
   --jq '[.[] | select(.user.login == "coderabbitai[bot]")] | sort_by(.submitted_at) | last | .state'
 ```
 
-Poll every 20 seconds, up to 3 minutes. CodeRabbit's `request_changes_workflow` auto-approval fires after threads are resolved AND pre-merge checks pass.
+Poll by making **individual Bash tool calls** every 20 seconds, up to 3 minutes. CodeRabbit's `request_changes_workflow` auto-approval fires after threads are resolved AND pre-merge checks pass.
 
 Outcomes:
 - `APPROVED`: success — CodeRabbit has lifted the reviewer block.
 - `CHANGES_REQUESTED` after timeout: "All threads resolved but CodeRabbit has not approved. Pre-merge checks may be failing — check the CodeRabbit walkthrough comment for details."
-- Skip Phase 2 entirely if Step 1b found `request_changes_workflow` is not enabled.
 
 ### 6e. Report
 
 ```text
 Review round complete for PR #<N>:
-- Fixed: X findings (list them)
-- Skipped: Y findings (list with reasons)
-- Duplicates: Z
+- Fixed: X findings in commit <short-sha> (list them)
+  [If multi-round: "Round 1: A findings in <sha1>; Round 2: B findings in <sha2>"]
+- Skipped: Y findings (list with reasons) — threads left open
+- Already fixed: Z findings (list them) — threads left open
+- Duplicates: W
 - Incremental review rounds: M
-- Thread status: all resolved / N unresolved (list files)
-- CodeRabbit verdict: APPROVED / CHANGES_REQUESTED (pending)
+- Reply failures: F (list comment IDs and error codes, if any)
+- Reply skipped: G (body-level findings with no inline comment ID, if any)
+- Thread status: X resolved via reply / Y left open (non-fix)
+  [If fix-threads unresolved: "N fix-threads still unresolved — to force-resolve: gh pr comment <N> --body '@coderabbitai resolve'"]
+- CodeRabbit verdict: APPROVED / CHANGES_REQUESTED (expected — N threads open) / not polled (request_changes_workflow disabled)
 ```
 
 ## Edge cases
 
 - **No new comments**: report "Nothing to review" and exit
-- **All findings are skips/duplicates**: resolve threads without pushing (skip 6a/6b, go straight to 6c)
+- **All findings are non-fix (skip/duplicate/already-fixed)**: no push, no replies, no resolution — report only, threads stay open
 - **CodeRabbit review pending**: "Review in progress — wait and retry"
 - **CI failing from unrelated issue**: warn user but still process review findings (the review may contain the fix)
 - **Branch protection blocks push**: report the error, don't retry
 - **Incremental review loop**: cap at 3 fix-push-review cycles to prevent infinite loops
 - **CodeRabbit timeout/down**: if polls consistently timeout with no CodeRabbit activity, report and stop
-- **Stale CHANGES_REQUESTED with no findings**: post resolve and wait for auto-approval — CodeRabbit may be blocking from a previous review round whose threads were never resolved
+- **Stale CHANGES_REQUESTED with no new findings**: no new findings → no triage → report "no findings but N prior-round threads still open" with manual resolve command (`gh pr comment <N> --body "@coderabbitai resolve"`)
+- **Fix-threads don't auto-resolve on hash reply**: report unresolved threads + manual resolve command. No automated fallback
+- **Reply API call fails (404/403/422)**: log failure, continue loop, report count in 6e
+- **Reply API rate-limited (429)**: wait `Retry-After` duration, retry once. If still 429, log and continue
+- **Mixed fix+non-fix findings, all fix-threads resolve**: skip Phase 2 (non-fix threads open → no APPROVED expected), report non-fix threads
+- **All fix, no non-fix, threads resolve**: per-thread replies, poll, Phase 2 → APPROVED
+- **Multi-round fix-push-review**: per-thread replies posted after each push with correct per-round SHA
+- **Comment deleted between triage and reply**: 404 from reply API — logged, counted, non-fatal
+- **Body-level nitpick categorized as fix**: reply skipped (no comment ID), noted in report
+- **Incremental review creates new thread on same location**: round-N replies use round-N comment IDs from the incremental review fetch. If the new thread is on the same file:line as a prior round's "Resolved" reply, both coexist — cosmetically confusing but functionally correct
+- **Rate limit on reply API (pathological 30+ findings)**: 429 retry handles transient limits; if persistent, cap at available budget and report
