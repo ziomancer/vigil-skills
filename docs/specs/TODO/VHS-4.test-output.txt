@@ -1,0 +1,20 @@
+Test command: python sync.py status && grep -c "FAST_PATH" skills/review-pr/SKILL.md && grep -c "gh pr checks" skills/review-pr/SKILL.md && grep -c "Review completion signal:" skills/review-pr/SKILL.md
+
+Output:
+  [ dst-only] skills/peon-ping-config\SKILL.md
+  [ dst-only] skills/peon-ping-log\SKILL.md
+  [ dst-only] skills/peon-ping-toggle\SKILL.md
+  [ dst-only] skills/peon-ping-use\SKILL.md
+  [   differ] skills/review-pr\SKILL.md
+  [   differ] skills/ship-spec\states.json
+4
+3
+3
+
+Exit code: 0
+
+Verification:
+1. sync.py status: SKILL.md shows as differing (worktree ahead of installed) — expected
+2. FAST_PATH grep count: 4 (preamble predicate, preamble log, 6a evaluation, 6b skip note)
+3. gh pr checks grep count: 3 (Step 1 existing, 6a CI-check gate, edge case entry)
+4. Review completion signal grep count: 3 (6e template, 2 edge case entries)

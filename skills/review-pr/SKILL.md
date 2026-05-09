@@ -143,14 +143,25 @@ Only if fixes were made:
 
 Per-thread `Resolved in <sha>` replies on fix-categorized finding threads are the primary closure mechanism. Threads for non-fix findings (skip/duplicate/already-fixed) are left open for CodeRabbit and the user to handle naturally. Auto-approval (`APPROVED` verdict) requires all threads resolved AND `request_changes_workflow: true` AND pre-merge checks passing. The skill never posts `@coderabbitai resolve` — if threads don't auto-resolve on hash reply, the report offers the manual command.
 
+**Fast-path predicate (evaluated once, after Step 5):**
+
+```
+FAST_PATH = (round1_finding_count <= 2
+             AND every round-1 finding is categorized as "fix"
+             AND step 5 pushed successfully)
+```
+
+If `FAST_PATH` is true, skip Steps 6a and 6b entirely — proceed directly to Step 6d. Log: `Fast path triggered — skipping incremental review wait (≤2 fix-only findings)`. The rationale: on trivial PRs (1–2 fix-only findings), CodeRabbit's incremental review of the resulting small fix almost never surfaces new actionable findings. The 30s–5min wait in 6a has near-zero expected value. If CodeRabbit does post new findings, re-running `/review-pr` on the same PR picks them up naturally.
+
 ### 6a. Wait for CodeRabbit's incremental review (only if fixes were pushed)
 
 If no fixes were pushed (all skips/duplicates/already-fixed), skip to 6d.
 
-**Before entering the wait loop, capture push time and check the current verdict:**
+**If FAST_PATH is true**, set `REVIEW_SIGNAL=fast-path` and skip to 6d. (Per-thread replies were already posted in Step 5.)
+
+**Otherwise, capture push time and check for pre-existing approval:**
 
 ```bash
-# Fetch the HEAD commit's committer date from GitHub (always UTC — avoids local-timezone mismatch on Windows)
 HEAD_SHA=$(git rev-parse HEAD)
 PUSH_TIME=$(gh api repos/<OWNER>/<REPO>/commits/$HEAD_SHA --jq '.commit.committer.date')
 
@@ -158,21 +169,51 @@ gh api repos/<OWNER>/<REPO>/pulls/<N>/reviews \
   --jq '[.[] | select(.user.login == "coderabbitai[bot]")] | sort_by(.submitted_at) | last | {state, submitted_at}'
 ```
 
-If the latest verdict's `state` is `APPROVED` **and its `submitted_at` is after `PUSH_TIME`**, skip 6a/6b and go straight to 6e — CodeRabbit has already reviewed the new commit and approved it. A pre-push `APPROVED` verdict must not short-circuit: the incoming incremental review may flip it back to `CHANGES_REQUESTED`.
+`PUSH_TIME` is conversational state — the LLM captures its value from the Bash output and substitutes it literally into subsequent Bash commands. Individual Bash tool calls do not share shell variables.
 
-**Otherwise**, after pushing, CodeRabbit auto-triggers an incremental review of the new commit. Wait for it to land before resolving anything — otherwise the resolve may race with new findings from the re-review.
+If the latest verdict's `state` is `APPROVED` **and its `submitted_at` is after `PUSH_TIME`**, skip 6a/6b and go straight to 6e. Set `REVIEW_SIGNAL=pre-existing-approval`. (This skips 6d — the existing behavior, preserved from the current SKILL.md; `APPROVED` implies threads are resolved or will be imminently.) A pre-push `APPROVED` verdict must not short-circuit: the incoming incremental review may flip it back to `CHANGES_REQUESTED`.
+
+**Otherwise, gate on CodeRabbit's CI check completing:**
 
 ```bash
-# Poll: is there a CodeRabbit review submitted after our push?
-gh api repos/<OWNER>/<REPO>/pulls/<N>/reviews \
-  --jq '[.[] | select(.user.login == "coderabbitai[bot]") | select(.submitted_at > "'"$PUSH_TIME"'")] | length'
+gh pr checks <N> --json name,state \
+  --jq '[.[] | select(.name | test("coderabbit"; "i")) | .state] | if length == 0 then "NONE" elif any(. == "PENDING") then "PENDING" elif all(. == "SUCCESS") then "SUCCESS" else "FAILURE" end'
 ```
 
-Poll by making **individual Bash tool calls** (not a single blocking loop) so the conversation stays responsive — the user can interject, correct, or cancel between checks. Check every 30 seconds, up to 5 minutes (10 attempts). If at timeout `gh pr checks <N>` still shows CodeRabbit "in_progress", extend the wait to 10 minutes total. If no CodeRabbit check is running at all, proceed — CodeRabbit may have decided the diff didn't warrant a re-review.
+The jq aggregation handles four cases: if no CodeRabbit-named checks exist, return `NONE` (triggers the "no check found" fallback); if any is `PENDING`, treat the overall state as `PENDING`; if all are `SUCCESS`, treat as `SUCCESS`; otherwise `FAILURE` (catches `FAILURE`, `CANCELLED`, `ERROR`, `STALE`, and any other non-standard GitHub check state — conservative and safe).
 
-When a new review is detected, capture its `id` for use in Step 6b.
+Poll by making **individual Bash tool calls** every 15 seconds. Note the wall-clock time at first poll as `FIRST_POLL_TIME` — this is conversational state tracked by the LLM across tool calls, not a persistent shell variable (individual Bash calls do not share state). Reset `FIRST_POLL_TIME` at the start of each re-entry to 6a from 6b (timeouts are per-round, not cumulative). Outcomes:
+
+- **CodeRabbit check returns `SUCCESS`:** set `REVIEW_SIGNAL=ci-check`. Fetch the latest CodeRabbit review to capture its `id` for Step 6b:
+  ```bash
+  gh api repos/<OWNER>/<REPO>/pulls/<N>/reviews \
+    --jq '[.[] | select(.user.login == "coderabbitai[bot]")] | sort_by(.submitted_at) | last | .id'
+  ```
+  Proceed to 6b.
+
+- **CodeRabbit check returns `FAILURE`:** set `REVIEW_SIGNAL=ci-check (FAILURE)`. CodeRabbit errored — no incremental findings expected. Proceed to 6d (skip 6b).
+
+- **CodeRabbit check returns `NONE` (no check found):** Track how long since `FIRST_POLL_TIME`. Early `NONE` results are expected (push-to-check registration race). After 1 minute of continuous `NONE`, fall back to reviews-API poll for the remaining time (up to 5 minutes total from first poll). Set `REVIEW_SIGNAL=reviews-api-fallback`.
+  ```bash
+  # Detection query (returns count):
+  gh api repos/<OWNER>/<REPO>/pulls/<N>/reviews \
+    --jq '[.[] | select(.user.login == "coderabbitai[bot]") | select(.submitted_at > "'"$PUSH_TIME"'")] | length'
+
+  # Once count > 0, capture the review ID:
+  gh api repos/<OWNER>/<REPO>/pulls/<N>/reviews \
+    --jq '[.[] | select(.user.login == "coderabbitai[bot]") | select(.submitted_at > "'"$PUSH_TIME"'")] | last | .id'
+  ```
+  When a new review is detected, capture its `id` for Step 6b. If timeout with no new review, proceed to 6d — CodeRabbit may have decided the diff didn't warrant a re-review.
+
+- **CodeRabbit check found but still `PENDING` after 5 minutes:** extend to 10 minutes total (preserved from current 6a behavior). During the extension, also check the reviews-API as a parallel signal — if a new review is detected via reviews-API while the check is still `PENDING`, use the review and proceed to 6b (set `REVIEW_SIGNAL=reviews-api-fallback`). If still pending after 10 minutes, set `REVIEW_SIGNAL=ci-check (timeout)`, warn-and-proceed to 6d.
+
+**Re-entry from 6b (round 2+ guard):** When 6b loops back to 6a after a subsequent push, the CodeRabbit CI check from the prior round still shows `SUCCESS`. Before gating on `SUCCESS`, the skill must first observe the check transition to `PENDING` (indicating the new review run started). If the check does not transition away from `SUCCESS` within 1 minute, fall back to reviews-API poll (whose `submitted_at > PUSH_TIME` filter naturally handles staleness).
+
+When a new review is detected (via either signal), capture its `id` for use in Step 6b.
 
 ### 6b. Triage new findings from incremental review
+
+(Skipped entirely when FAST_PATH is true — proceed to 6d.)
 
 Once the incremental review lands, fetch its inline comments **filtered to the new review's ID** (captured in 6a) to avoid re-triaging old comments from prior rounds:
 
@@ -297,6 +338,8 @@ Review round complete for PR #<N>:
 - Thread status: X resolved via reply / Y left open (non-fix)
   [If fix-threads unresolved: "N fix-threads still unresolved — to force-resolve: gh pr comment <N> --body '@coderabbitai resolve'"]
 - CodeRabbit verdict: APPROVED / CHANGES_REQUESTED (expected — N threads open) / not polled (request_changes_workflow disabled)
+- Fast path: yes — re-run /review-pr if CodeRabbit posts new findings / no
+- Review completion signal: ci-check / ci-check (FAILURE) / ci-check (timeout) / reviews-api-fallback / pre-existing-approval / fast-path
 ```
 
 ## Edge cases
@@ -319,3 +362,11 @@ Review round complete for PR #<N>:
 - **Body-level nitpick categorized as fix**: reply skipped (no comment ID), noted in report
 - **Incremental review creates new thread on same location**: round-N replies use round-N comment IDs from the incremental review fetch. If the new thread is on the same file:line as a prior round's "Resolved" reply, both coexist — cosmetically confusing but functionally correct
 - **Rate limit on reply API (pathological 30+ findings)**: 429 retry handles transient limits; if persistent, cap at available budget and report
+- **Fast path triggered, no incremental review observed**: expected behavior — the fast path intentionally skips 6a/6b. If CodeRabbit posts new findings after the run, re-run `/review-pr` to pick them up.
+- **Fast path triggered but CodeRabbit posts new findings before 6d completes**: 6d's thread-resolution polling may observe unresolved threads from the new findings. The report will show them as unresolved with the manual resolve command. Re-run `/review-pr` to triage.
+- **CodeRabbit check missing or stuck — fallback to reviews-API**: if `gh pr checks <N>` returns no CodeRabbit-named check within 1 minute of first poll, fall back to reviews-API poll. Report shows `Review completion signal: reviews-api-fallback`. Common causes: draft PR, paused review, CodeRabbit Checks integration disabled.
+- **CodeRabbit check `FAILURE`**: CodeRabbit encountered an error and did not post findings. Proceed to 6d (skip 6b). Report shows `Review completion signal: ci-check (FAILURE)`.
+- **CodeRabbit check stuck `PENDING` for 10 minutes**: the PENDING extension window expires. Set `REVIEW_SIGNAL=ci-check (timeout)`, warn, proceed to 6d. Report shows the timeout signal for observability.
+- **Race between push and check registration**: the CodeRabbit check may not appear on the first 1–2 polls after push. The 1-minute compatibility window is measured from first poll, not first miss — early misses do not trigger fallback.
+- **Reviews-API fallback hides CI-check regression**: if `reviews-api-fallback` appears consistently when `ci-check` is expected, the CI-check filter may be broken. Report makes this observable.
+- **Stale CI check on round 2+ re-entry**: after 6b pushes and loops back to 6a, the round-1 CodeRabbit check still shows `SUCCESS`. The re-entry guard waits for `PENDING` before gating on the next `SUCCESS`. If the check never transitions (CodeRabbit skipped re-review), the 1-minute window expires and the skill falls back to reviews-API.
