@@ -1,5 +1,5 @@
 {
-  "_note": "Intentionally partial — covers only projects that use /spec-cycle today (MCP, DYN, VHS). Add an entry when onboarding a new project. State UUIDs fetched from Plane 2026-05-08; refresh if project workflows change.",
+  "_note": "Intentionally partial — covers only projects that use /spec-cycle today (MCP, DYN, VHS, ADA). Add an entry when onboarding a new project. State UUIDs fetched from Plane 2026-05-08/09; refresh if project workflows change.",
   "MCP": {
     "project_id": "98788c4e-f30f-466d-9562-19e28aa4e53e",
     "namespace": "mcp",
@@ -30,6 +30,22 @@
       "PR Review": "2f177294-83d8-4c9a-b74d-03bbc6826593",
       "Done": "2f72aa3c-f999-4bf0-84aa-9b4f322a7e74",
       "Cancelled": "1323fe07-3abf-405a-a969-20a4561e4244"
+    }
+  },
+  "ADA": {
+    "project_id": "4e2d82c9-6ea0-4bc6-b528-e744d92fc9dd",
+    "namespace": "adapter",
+    "review_state_id": "9a44c946-c19f-4d15-8d5d-9cde9ea67f10",
+    "states": {
+      "Backlog": "463460e2-25e1-43d6-92d6-908cca58689c",
+      "Todo": "df0ee854-5e3a-4f5d-8448-8c8bcb075b27",
+      "Ready to Ship": "2b172e24-8c24-4d0e-a9fb-45bdd7ad2637",
+      "In Progress": "40f6c038-965b-4ffb-9a42-32551f5fd90b",
+      "Spec Authoring": "cc47be00-7154-48de-af72-ea7a9ac38213",
+      "Spec Review": "6e3ccd58-d92f-4bfa-bae8-434ff104f1e0",
+      "PR Review": "9a44c946-c19f-4d15-8d5d-9cde9ea67f10",
+      "Done": "92e350b6-12f1-4391-8e2d-3e4406a507a1",
+      "Cancelled": "54f281ca-1da3-40f8-aec6-d48919a2ba09"
     }
   },
   "VHS": {
