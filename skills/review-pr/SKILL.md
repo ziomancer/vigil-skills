@@ -36,8 +36,8 @@ WORKTREE_PATH=$(git worktree list --porcelain | awk -v b="$PR_BRANCH" '
 If `WORKTREE_PATH` is non-empty, use it as the working directory for all subsequent steps (file reads, edits, git operations). If the branch is the current branch in the primary tree (`git branch --show-current` matches `$PR_BRANCH`), use the primary tree. If the branch isn't checked out anywhere, check it out before proceeding.
 
 ```bash
-# Get the PR's diff scope — helps contextualize findings and triage outside-diff comments
-gh pr diff <N> --stat
+# Get the PR's diff scope (file list) — helps contextualize findings and triage outside-diff comments
+gh pr diff <N> --name-only
 
 # Check if CodeRabbit review is still pending
 gh pr checks <N>
@@ -182,7 +182,7 @@ gh pr checks <N> --json name,state \
 
 The jq aggregation handles four cases: if no CodeRabbit-named checks exist, return `NONE` (triggers the "no check found" fallback); if any is `PENDING`, treat the overall state as `PENDING`; if all are `SUCCESS`, treat as `SUCCESS`; otherwise `FAILURE` (catches `FAILURE`, `CANCELLED`, `ERROR`, `STALE`, and any other non-standard GitHub check state — conservative and safe).
 
-Poll by making **individual Bash tool calls** every 15 seconds. Note the wall-clock time at first poll as `FIRST_POLL_TIME` — this is conversational state tracked by the LLM across tool calls, not a persistent shell variable (individual Bash calls do not share state). Reset `FIRST_POLL_TIME` at the start of each re-entry to 6a from 6b (timeouts are per-round, not cumulative). Outcomes:
+Poll by making **individual Bash tool calls** every 15 seconds (intervals are aspirational because the agent harness fires Bash tool calls back-to-back; `FIRST_POLL_TIME` is what bounds total polling, not the per-poll wait). Note the wall-clock time at first poll as `FIRST_POLL_TIME` — this is conversational state tracked by the LLM across tool calls, not a persistent shell variable (individual Bash calls do not share state). Reset `FIRST_POLL_TIME` at the start of each re-entry to 6a from 6b (timeouts are per-round, not cumulative). Outcomes:
 
 - **CodeRabbit check returns `SUCCESS`:** set `REVIEW_SIGNAL=ci-check`. Fetch the latest CodeRabbit review to capture its `id` for Step 6b:
   ```bash
@@ -265,6 +265,8 @@ Where `<COMMENT_ID>` is the review-comment ID from the finding's triage. For fin
 
 **Phase 1 — Observe thread resolution status.**
 
+> Note: GitHub's GraphQL API returns `coderabbitai` for the bot login (no `[bot]` suffix). The REST API used elsewhere in this skill returns `coderabbitai[bot]`. The jq filter below runs against GraphQL data, so it uses the unsuffixed form.
+
 ```bash
 gh api graphql -f query='query {
   repository(owner:"<OWNER>", name:"<REPO>") {
@@ -281,7 +283,7 @@ gh api graphql -f query='query {
       }
     }
   }
-}' --jq '.data.repository.pullRequest.reviewThreads | {hasNextPage: .pageInfo.hasNextPage, endCursor: .pageInfo.endCursor, threads: [.nodes[] | select(.comments.nodes[0].author.login == "coderabbitai[bot]")]}'
+}' --jq '.data.repository.pullRequest.reviewThreads | {hasNextPage: .pageInfo.hasNextPage, endCursor: .pageInfo.endCursor, threads: [.nodes[] | select(.comments.nodes[0].author.login == "coderabbitai")]}'
 ```
 
 If `hasNextPage` is true, repeat with `reviewThreads(first:100, after:"<endCursor>")` and merge the `threads` arrays until `hasNextPage` is false. Then evaluate the merged set:
@@ -292,9 +294,9 @@ If `hasNextPage` is true, repeat with `reviewThreads(first:100, after:"<endCurso
 # otherwise: unresolved_threads: <comma-separated .path values of unresolved threads>
 ```
 
-Poll by making **individual Bash tool calls** (not a sleep loop — sleep loops are blocked in this environment). Check every 15 seconds, up to 2 minutes. After each poll, observe how many CodeRabbit threads are resolved and how many are still unresolved. The skill does not attempt to correlate unresolved thread counts against finding counts — it simply observes and reports.
+Poll by making **individual Bash tool calls** (not a sleep loop — sleep loops are blocked in this environment). Make up to 8 polling attempts; the attempt count governs total polling, not wall-clock duration — intervals are aspirational because the agent harness fires Bash tool calls back-to-back. After each poll, observe how many CodeRabbit threads are resolved and how many are still unresolved. The skill does not attempt to correlate unresolved thread counts against finding counts — it simply observes and reports.
 
-If after the 2-minute polling window some threads are still unresolved, report the unresolved thread file paths and the manual resolve command:
+If after exhausting the polling attempts some threads are still unresolved, report the unresolved thread file paths and the manual resolve command:
 
 ```text
 N CodeRabbit threads still unresolved after 2min:
@@ -319,7 +321,7 @@ gh api repos/<OWNER>/<REPO>/pulls/<N>/reviews \
   --jq '[.[] | select(.user.login == "coderabbitai[bot]")] | sort_by(.submitted_at) | last | .state'
 ```
 
-Poll by making **individual Bash tool calls** every 20 seconds, up to 3 minutes. CodeRabbit's `request_changes_workflow` auto-approval fires after threads are resolved AND pre-merge checks pass.
+Poll by making **individual Bash tool calls**; make up to 9 polling attempts. The attempt count governs total polling, not wall-clock duration — intervals are aspirational because the agent harness fires Bash tool calls back-to-back. CodeRabbit's `request_changes_workflow` auto-approval fires after threads are resolved AND pre-merge checks pass.
 
 Outcomes:
 - `APPROVED`: success — CodeRabbit has lifted the reviewer block.
