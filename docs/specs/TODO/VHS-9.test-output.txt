@@ -1,4 +1,4 @@
-﻿  [skip ] skills/review-pr\SKILL.md  (in sync)
+  [skip ] skills/review-pr\SKILL.md  (in sync)
   [skip ] skills/ship-spec\SKILL.md  (in sync)
   [skip ] skills/ship-spec\states.json  (in sync)
   [skip ] skills/spec-cycle\SKILL.md  (in sync)
