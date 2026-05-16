@@ -13,19 +13,22 @@ Invoked as: `/spec-retire <spec-path>` or `/spec-retire <spec-path> --partial`.
 3. Confirm the reconciliation report exists alongside the spec (same directory, `<TICKET-ID>.reconciliation.md` or `reconciliation.md`). If not: halt with `Reconciliation report not found. Run /spec-reconcile <spec-path> first.`
 4. Read the reconciliation report's last non-blank line. Parse `RECONCILED: <yes|no> DRIFT: <n>`. If `RECONCILED: no`, warn: `Spec has unmet acceptance criteria. Review the reconciliation report before proceeding. Continue anyway? [y/N]`. Halt on N.
 5. Read `<project_root>/CLAUDE.md`. Identify the wiki path. Confirm the wiki directory exists.
-6. Read `~/.claude/skills/ship-spec/states.json`. Look up ticket prefix.
-7. Check for `--partial` flag in invocation args. If present, force partial-retire regardless of Plane state.
+6. Read `~/.claude/skills/ship-spec/states.json`. Look up ticket prefix to get `project_id` and `namespace`. If prefix not found, warn: `Project prefix "<project_prefix>" not found in states.json. Skipping Plane state gate — entering partial-retire mode.` Set `force_partial_retire = true` and skip Phase 1 entirely (no `project_id` means Plane calls cannot proceed).
+7. Check for `--partial` flag in invocation args. If present, set `force_partial_retire = true`.
 
 Print a one-line preflight summary, then continue.
 
 ## Phase 1 — Plane state gate
+
+If `force_partial_retire` is set (from `--partial` flag or missing prefix in preflight), skip Plane lookups and enter **partial-retire** directly. Print: `Entering partial-retire mode: archiving spec artifacts only, skipping wiki decomposition.`
+
+Otherwise:
 
 1. Call `mcp__claude_ai_Plane__list_states(project_id)` to get the full state map with groups.
 2. Look up the ticket via `mcp__claude_ai_Plane__retrieve_work_item_by_identifier(project_identifier, issue_number)` (pass `issue_number` as integer).
 3. Match the ticket's `state` UUID against the state map to determine the group.
 4. Determine mode:
    - `group == "completed"` or `group == "cancelled"` -> **full-retire**.
-   - `--partial` flag was set -> **partial-retire** (regardless of state).
    - Any other group -> **partial-retire** (auto-detected). Print: `Ticket <TICKET-ID> is in state "<state_name>" (group: <group>). Entering partial-retire mode: archiving spec artifacts only, skipping wiki decomposition.`
 
 ## Phase 2 — Analysis
@@ -42,7 +45,7 @@ grep -rli "<key-terms>" "<wiki_root>/decisions/" "<wiki_root>/comprehension/"
 Where `<key-terms>` are 2-3 distinctive words from the spec's Goal section (not common words like "fix" or "update").
 
 If matches found, read each matched file's title and first paragraph. Present to user:
-```
+```text
 Pre-existing wiki entries found:
   1. decisions/2026-05-06-dyn-34-score-calibration-pipeline.md — "Decision: DYN-34a score calibration pipeline"
   2. comprehension/2026-05-06-dyn-34b-ui-calibration-overlay.md — "Comprehension: DYN-34b calibration UI overlay"
@@ -65,7 +68,7 @@ Skip entirely for partial-retire. For full-retire:
    - Draft a comprehension entry following SCHEMA.md's template. Include: What Changed, Why, What Would Break, Files Touched, Judgment Calls.
 4. For `state.md` updates:
    - If the ticket was in "What's Next" or "What's Active", propose moving it to "What's Shipped" with the evidence triple:
-     ```
+     ```markdown
      ### <Title> (<TICKET-ID>, <ship-date>, commit <merge-sha>)
      Verification: <file>:<line> -- '<excerpt>'.
      ```
@@ -85,7 +88,7 @@ For partial-retire, this section contains only the archive list and log.md entry
 ## Phase 3 — User confirmation
 
 Present the compiled proposals:
-```
+```text
 === RETIREMENT PLAN: <TICKET-ID> ===
 Mode: <full-retire | partial-retire>
 
@@ -142,7 +145,7 @@ All file operations happen here, after user approval.
 5. **Do not commit.** The skill writes to two separate repos (target repo for archive, wiki repo for entries). Neither is committed — the user controls commit timing.
 
 Print at the end:
-```
+```text
 === RETIREMENT COMPLETE: <TICKET-ID> ===
 
 Target repo (<project_root>):
