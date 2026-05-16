@@ -299,7 +299,7 @@ Poll by making **individual Bash tool calls** (not a sleep loop — sleep loops 
 If after exhausting the polling attempts some threads are still unresolved, report the unresolved thread file paths and the manual resolve command:
 
 ```text
-N CodeRabbit threads still unresolved after 2min:
+N CodeRabbit threads still unresolved after 8 polling attempts:
   - <path1>
   - <path2>
 To force-resolve all threads: gh pr comment <N> --body "@coderabbitai resolve"
