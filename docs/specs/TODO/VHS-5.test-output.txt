@@ -1,0 +1,20 @@
+VHS-5 — test gate output (2026-05-13)
+
+Test command (spec § Test command):
+test ge 1 coderabbitai, test eq 0 --stat, test ge 1 --name-only,
+test ge 3 intervals are aspirational, test eq 0 2-minute polling window,
+test eq 0 every 20 seconds up to 3 minutes,
+test ge 1 bounds total polling not the per-poll wait
+
+Per-clause results:
+  clause 1 (P0 new GraphQL filter coderabbitai): 1 >= 1 -> PASS
+  clause 2 (P1 --stat removed): 0 = 0 -> PASS
+  clause 3 (P1 --name-only present): 1 >= 1 -> PASS
+  clause 4 (P2 intervals are aspirational, three sites): 3 >= 3 -> PASS
+  clause 5 (P2 2-minute polling window removed): 0 = 0 -> PASS
+  clause 6 (P2 every 20 seconds up to 3 minutes removed): 0 = 0 -> PASS
+  clause 7 (P2 6a FIRST_POLL_TIME cross-reference present): 1 >= 1 -> PASS
+
+Combined chain: ALL CHECKS PASSED
+
+git diff --stat <merge-base>..HEAD (pre-commit):
