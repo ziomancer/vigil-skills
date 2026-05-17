@@ -10,6 +10,9 @@ Invoked as: `/spec-retire <spec-path>` or `/spec-retire <spec-path> --partial`.
 
 1. Resolve `<spec-path>`. Extract `ticket_id`, `project_prefix`, `issue_number`, and `project_root` using the same parsing rules as spec-reconcile Phase 0 step 1.
 2. Confirm the spec exists. Halt if not.
+2a. Check tracking status: `git ls-files --error-unmatch <spec-path> 2>/dev/null`. If exit ≠ 0 (file is untracked/gitignored), print:
+    `Note: Spec file is untracked (gitignored). Archive step will use mv + git add instead of git mv.`
+    Continue regardless — the file exists on disk, which is sufficient.
 3. Confirm the reconciliation report exists alongside the spec (same directory, `<TICKET-ID>.reconciliation.md` or `reconciliation.md`). If not: halt with `Reconciliation report not found. Run /spec-reconcile <spec-path> first.`
 4. Read the reconciliation report's last non-blank line. Parse `RECONCILED: <yes|no> DRIFT: <n>`. If `RECONCILED: no`, warn: `Spec has unmet acceptance criteria. Review the reconciliation report before proceeding. Continue anyway? [y/N]`. Halt on N.
 5. Read `<project_root>/CLAUDE.md`. Identify the wiki path. Confirm the wiki directory exists.
@@ -59,6 +62,81 @@ Track matched ticket IDs and decision titles as an exclusion list for Phase 2b.
 ### 2b. Wiki decomposition (full-retire only)
 
 Skip entirely for partial-retire. For full-retire:
+
+#### Fast-path: check existing wiki coverage
+
+Before drafting any wiki proposals, check whether `/wiki-after-merge` has already created wiki entries for this ticket. This is a grep-based pre-check (no LLM analysis) that can skip or narrow the derivation pipeline.
+
+**Stage 1 — Determine applicable derivation categories.**
+
+Extract the `## Wiki-ready` section from the reconciliation report, then grep for category markers within that section only (scoping avoids false positives from the `## Decisions` table header):
+
+```bash
+sed -n '/^## Wiki-ready/,/^##\|^RECONCILED/p' "<reconciliation_report_path>" > /tmp/wiki-ready-section.txt
+grep -c "Decision" /tmp/wiki-ready-section.txt
+grep -c "Comprehension" /tmp/wiki-ready-section.txt
+```
+
+Classify applicability:
+
+| Category | Applicable when |
+|----------|----------------|
+| `comprehension/` | Wiki-ready section contains "Comprehension" (grep count > 0) |
+| `decisions/` | Wiki-ready section contains "Decision" (grep count > 0) |
+| `state.md` "What's Shipped" | Always (evidence triple is mandatory for full-retire) |
+
+If the reconciliation report has no `## Wiki-ready` section (sed produces empty output), treat all categories as applicable and fall through to normal derivation.
+
+Note: `log.md` is not included in the coverage model. The retirement log entry is a distinct event from the merge log entry that wiki-after-merge writes. Phase 2c always compiles a retirement log entry, and Phase 4's idempotency guard (`grep -F "retire | <PROJECT> — <TICKET-ID>"`) prevents duplicates while allowing the retirement entry to coexist with wiki-after-merge's merge entry.
+
+**Stage 2 — Check existing coverage.**
+
+For each applicable category, run a targeted grep with echo delimiters for unambiguous per-category classification:
+
+```bash
+echo "::COMP::"; grep -rl "<TICKET-ID>" "<wiki_root>/comprehension/" 2>/dev/null
+echo "::DECI::"; grep -rl "<TICKET-ID>" "<wiki_root>/decisions/" 2>/dev/null
+echo "::STATE::"; grep -rl --include="state.md" "<TICKET-ID>" "<wiki_root>/projects/" 2>/dev/null
+```
+
+Run all applicable greps in a single Bash call (semicolon-separated). Classify each applicable category by checking the output between its delimiter and the next: non-empty output after the delimiter = `covered`, no output after the delimiter = `missing`.
+
+**Stage 3 — Branch on coverage level.**
+
+1. **Full coverage** (all applicable categories are `covered`):
+
+   Print a summary of what was found (only list applicable categories):
+   ```text
+   Wiki coverage already exists (likely created by /wiki-after-merge):
+     [found] comprehension/ — <matched-filename>
+     [found] decisions/ — <matched-filename>
+     [found] state.md — entry found
+
+   All derivation categories covered. Skip wiki proposal derivation? [y/N]
+   ```
+
+   - On `y`: set derivation proposals to empty (no decisions, no comprehension, no state.md edit). Proceed to Phase 2c, which still compiles the archive list and the retirement log entry.
+   - On `N`: fall through to the normal derivation flow.
+
+2. **Partial coverage** (some applicable categories are `covered`, some are `missing`):
+
+   Print what's covered and what's missing:
+   ```text
+   Partial wiki coverage found:
+     [found]   comprehension/ — <matched-filename>
+     [missing] decisions/ — not found
+     [found]   state.md — entry found
+
+   Deriving proposals for missing categories only.
+   ```
+
+   Then run the normal derivation logic below, but scoped to only the `missing` categories. Read all necessary inputs (reconciliation report, spec) as usual — only the drafting/proposal step is scoped to missing categories. The Phase 2a exclusion list still applies within the derivation scope.
+
+3. **No coverage** (no applicable categories are `covered`):
+
+   No output from the fast-path. Fall through to the normal derivation flow unchanged.
+
+#### Normal derivation (when fast-path does not fully exit)
 
 1. Read the reconciliation report's "Wiki-ready" section and the spec's "Decisions" sections.
 2. For each decision worth extracting (non-trivial, reusable, or constraining — skip implementation-detail decisions like "use `git mv` not `mv`"):
@@ -135,7 +213,7 @@ All file operations happen here, after user approval.
    - Tracked files: `git mv <source> <destination>`
    - Untracked files: `mv <source> <destination>` then `git add <destination>`
 
-4. **Log.md.** Append the approved entry to `<wiki_root>/log.md`. Idempotency: `grep -F "<TICKET-ID>" <wiki_root>/log.md` first; skip if already present. Format:
+4. **Log.md.** Append the approved entry to `<wiki_root>/log.md`. Idempotency: `grep -F "retire | <PROJECT> — <TICKET-ID>" <wiki_root>/log.md` first; skip if already present. `<PROJECT>` is `project_prefix` from Phase 0 step 1. This narrower match distinguishes retirement entries from wiki-after-merge's merge-event entries (which also contain the ticket ID). Format:
    ```markdown
    ## [YYYY-MM-DD] retire | <PROJECT> — <TICKET-ID>: <spec title> (archived from TODO/)
 
@@ -169,7 +247,7 @@ Suggested commits:
 - Read, Grep for duplicate detection and evidence extraction.
 - Write for wiki entries and log.md.
 - Edit for state.md updates (surgical line replacement).
-- Bash for `git mv`, `mkdir -p`, `grep -F` (idempotency check), `git ls-files --error-unmatch`, `git status`.
+- Bash for `git mv`, `mkdir -p`, `grep -F` (idempotency check), `grep -rl` / `grep -c` (fast-path coverage checks), `sed` (Wiki-ready section extraction), `git ls-files --error-unmatch`, `git status`.
 - `mcp__claude_ai_Plane__list_states` and `mcp__claude_ai_Plane__retrieve_work_item_by_identifier` for state gate.
 - This skill mutates files in both the target repo and the wiki repo. All mutations happen in Phase 4, after user confirmation in Phase 3.
 

@@ -1,0 +1,11 @@
+  [skip ] skills/review-pr\SKILL.md  (in sync)
+  [skip ] skills/ship-spec\SKILL.md  (in sync)
+  [skip ] skills/ship-spec\states.json  (in sync)
+  [skip ] skills/spec-cycle\SKILL.md  (in sync)
+  [skip ] skills/spec-reconcile\SKILL.md  (in sync)
+  [skip ] agents/spec-reviewer-conventions.md  (in sync)
+  [skip ] agents/spec-reviewer-correctness.md  (in sync)
+  [skip ] agents/spec-reviewer-edge-cases.md  (in sync)
+  [WRITE/dry] skills/spec-retire\SKILL.md  (differ)
+
+Dry run - 1 action(s) would be applied.
