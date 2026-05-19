@@ -16,7 +16,11 @@ Invoked as: `/spec-retire <spec-path>` or `/spec-retire <spec-path> --partial`.
 3. Confirm the reconciliation report exists alongside the spec (same directory, `<TICKET-ID>.reconciliation.md` or `reconciliation.md`). If not: halt with `Reconciliation report not found. Run /spec-reconcile <spec-path> first.`
 4. Read the reconciliation report's last non-blank line. Parse `RECONCILED: <yes|no> DRIFT: <n>`. If `RECONCILED: no`, warn: `Spec has unmet acceptance criteria. Review the reconciliation report before proceeding. Continue anyway? [y/N]`. Halt on N.
 5. Read `<project_root>/CLAUDE.md`. Identify the wiki path. Confirm the wiki directory exists.
-6. Read `~/.claude/skills/ship-spec/states.json`. Look up ticket prefix to get `project_id` and `namespace`. If prefix not found, warn: `Project prefix "<project_prefix>" not found in states.json. Skipping Plane state gate — entering partial-retire mode.` Set `force_partial_retire = true` and skip Phase 1 entirely (no `project_id` means Plane calls cannot proceed).
+6. Read `~/.claude/skills/ship-spec/states.json` (`~/.claude/` on Unix; `%USERPROFILE%\.claude\` on Windows). Handle failure modes — all fall back to partial-retire since `project_id`/`namespace` are unavailable:
+   - **File missing or unreadable:** Warn: `states.json missing or unreadable — skipping Plane state gate, entering partial-retire mode.` Set `force_partial_retire = true`.
+   - **Invalid JSON:** Warn: `states.json contains invalid JSON — skipping Plane state gate, entering partial-retire mode.` Set `force_partial_retire = true`.
+   - **Prefix not found:** Warn: `Project prefix "<project_prefix>" not found in states.json. Skipping Plane state gate — entering partial-retire mode.` Set `force_partial_retire = true`.
+   In all three cases, skip Phase 1 entirely (no `project_id` means Plane calls cannot proceed).
 7. Check for `--partial` flag in invocation args. If present, set `force_partial_retire = true`.
 
 Print a one-line preflight summary, then continue.
@@ -27,8 +31,8 @@ If `force_partial_retire` is set (from `--partial` flag or missing prefix in pre
 
 Otherwise:
 
-1. Call `mcp__claude_ai_Plane__list_states(project_id)` to get the full state map with groups.
-2. Look up the ticket via `mcp__claude_ai_Plane__retrieve_work_item_by_identifier(project_identifier, issue_number)` (pass `issue_number` as integer).
+1. Call the Plane MCP server's state-list capability (e.g., `mcp__claude_ai_Plane__list_states` in Claude Code, or the equivalent in your host's Plane integration) with `project_id` to get the full state map with groups.
+2. Look up the ticket via the Plane MCP server's work-item-lookup capability (e.g., `mcp__claude_ai_Plane__retrieve_work_item_by_identifier` in Claude Code, or the equivalent in your host) with `project_identifier` and `issue_number` (pass `issue_number` as integer).
 3. Match the ticket's `state` UUID against the state map to determine the group.
 4. Determine mode:
    - `group == "completed"` or `group == "cancelled"` -> **full-retire**.
@@ -248,7 +252,7 @@ Suggested commits:
 - Write for wiki entries and log.md.
 - Edit for state.md updates (surgical line replacement).
 - Bash for `git mv`, `mkdir -p`, `grep -F` (idempotency check), `grep -rl` / `grep -c` (fast-path coverage checks), `sed` (Wiki-ready section extraction), `git ls-files --error-unmatch`, `git status`.
-- `mcp__claude_ai_Plane__list_states` and `mcp__claude_ai_Plane__retrieve_work_item_by_identifier` for state gate.
+- Plane MCP server's state-list and work-item-lookup capabilities (e.g., `mcp__claude_ai_Plane__list_states` and `mcp__claude_ai_Plane__retrieve_work_item_by_identifier` in Claude Code, or the equivalents in your host's Plane integration) for state gate.
 - This skill mutates files in both the target repo and the wiki repo. All mutations happen in Phase 4, after user confirmation in Phase 3.
 
 ## Failure modes

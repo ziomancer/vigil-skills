@@ -63,7 +63,7 @@ Adjust the layout in your fork if needed; the skills hardcode these paths today.
 
 `/spec-cycle` and `/ship-spec` use the Plane MCP server for ticket lookup and state updates. Configure it per Plane's docs.
 
-`/ship-spec` flips a ticket to a review-equivalent state after PR open. The skill reads `skills/ship-spec/states.json` and uses the `review_state_id` field for the project. If your project isn't in `states.json` or has no `review_state_id`, the skill skips the flip and reports the available state names so you can update manually. To add a new project, run `mcp__plane__list_states` for the project and add an entry to `states.json`.
+`/ship-spec` flips a ticket to a review-equivalent state after PR open. The skill reads `skills/ship-spec/states.json` and uses the `review_state_id` field for the project. If your project isn't in `states.json` or has no `review_state_id`, the skill skips the flip and reports the available state names so you can update manually. To add a new project, call the Plane MCP server's state-list capability (e.g., `mcp__plane__list_states` in Claude Code, or the equivalent in your host's Plane integration) for the project and add an entry to `states.json`.
 
 ## Default branch
 

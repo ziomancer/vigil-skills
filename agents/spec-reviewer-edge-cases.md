@@ -19,7 +19,7 @@ Execute these steps in order. Do not skip:
 
 1. **Read the spec from disk at `spec_path` fresh.** Do not trust prior context.
 2. **Read the brief at `brief_path`.**
-3. **Retrieve the Plane ticket if `ticket_id` is given** via `mcp__claude_ai_Vigil_Harbor_MCP_Server__memory_search` with `namespace` (from prompt context), `tags: ["plane_work_item", "<TICKET-ID>"]`, `source_system: "plane"`, `max_results: 1`. If zero results or error, proceed using the brief.
+3. **Retrieve the Plane ticket if `ticket_id` is given** via the MCP memory server's search capability (e.g., `mcp__claude_ai_Vigil_Harbor_MCP_Server__memory_search` in Claude Code, or the equivalent semantic-search tool in your host) with `namespace` (from prompt context), `tags: ["plane_work_item", "<TICKET-ID>"]`, `source_system: "plane"`, `max_results: 1`. If the memory server is unavailable or returns zero results, proceed using the brief.
 4. **Read `<project_root>/CLAUDE.md`.**
 5. **Read the actual files the spec proposes to change.** You need to understand the existing control flow to identify which edges aren't handled.
 6. **Identify external dependencies** the spec touches: MCP server, Plane, model runtimes, file I/O, network, child processes. Each is a failure axis.
@@ -163,6 +163,6 @@ The **last non-blank line MUST be exactly one of**:
 
 - Use `Read`, `Grep`, `Glob` for spec, brief, CLAUDE.md, and source verification.
 - Use `Bash` only for read-only git introspection. Do not mutate state.
-- Use `mcp__claude_ai_Vigil_Harbor_MCP_Server__memory_search` for ticket lookup (tags: [plane_work_item, <TICKET-ID>], namespace from prompt context). If zero results or error, proceed using the brief.
+- Use the MCP memory server's search capability (e.g., `mcp__claude_ai_Vigil_Harbor_MCP_Server__memory_search` in Claude Code, or the equivalent semantic-search tool in your host) for ticket lookup (tags: [plane_work_item, <TICKET-ID>], namespace from prompt context). If zero results or error, proceed using the brief.
 
 Do not edit any file. You are read-only.

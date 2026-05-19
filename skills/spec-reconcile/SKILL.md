@@ -11,8 +11,12 @@ Invoked as: `/spec-reconcile <spec-path>` (e.g., `/spec-reconcile docs/specs/TOD
 1. Resolve `<spec-path>`. Expected shapes: `docs/specs/TODO/<TICKET-ID>.spec.md` or `docs/specs/DONE/<TICKET-ID>/spec.md`. Extract `ticket_id` (uppercase): from TODO paths, the filename stem before `.spec.md`; from DONE paths, the parent directory name. Derive `project_prefix` (portion before the first hyphen, e.g., `ADA` from `ADA-17`) and `issue_number` (integer portion after the hyphen, e.g., `17`). Set `project_root` to the repo root (the directory containing `CLAUDE.md`).
 2. Confirm the spec exists. Halt if not.
 3. Read `<project_root>/CLAUDE.md`. Identify the wiki path (resolve username-bearing paths per spec-cycle convention).
-4. Read `~/.claude/skills/ship-spec/states.json`. Look up ticket prefix to get `project_id`, `namespace`, and `project_identifier`. If prefix not found, halt with `Project prefix "<project_prefix>" not found in states.json. Add the project before running spec-reconcile.` — without `project_id`, the Plane state check in step 5 cannot proceed.
-5. Verify Plane ticket state. Call `mcp__claude_ai_Plane__list_states(project_id)` to get the state map. Then look up the ticket via `mcp__claude_ai_Plane__retrieve_work_item_by_identifier(project_identifier, issue_number)` (pass `issue_number` as integer). Check whether the ticket's state falls in a `group == "completed"` or `group == "cancelled"` state. If not: halt with `Ticket <TICKET-ID> is not in a completed state (current: <state_name>). Reconciliation requires a completed ticket. Close the ticket in Plane or verify the correct spec path.` This matches the brief's "warn-and-halt" requirement — reconciliation targets shipped work, so a non-completed ticket signals the wrong spec or premature invocation.
+4. Read `~/.claude/skills/ship-spec/states.json` (`~/.claude/` on Unix; `%USERPROFILE%\.claude\` on Windows). Handle failure modes:
+   - **File missing or unreadable:** Halt with `states.json missing or unreadable — ensure ~/.claude/skills/ship-spec/states.json exists and is valid JSON.`
+   - **Invalid JSON:** Halt with `states.json contains invalid JSON — fix the file and re-run.`
+   - **Prefix not found:** Halt with `Project prefix "<project_prefix>" not found in states.json. Add the project before running spec-reconcile.`
+   Without `project_id`, the Plane state check in step 5 cannot proceed, so all three cases are hard halts.
+5. Verify Plane ticket state. Call the Plane MCP server's state-list capability (e.g., `mcp__claude_ai_Plane__list_states` in Claude Code, or the equivalent in your host's Plane integration) with `project_id` to get the state map. Then look up the ticket via the Plane MCP server's work-item-lookup capability (e.g., `mcp__claude_ai_Plane__retrieve_work_item_by_identifier` in Claude Code, or the equivalent in your host) with `project_identifier` and `issue_number` (pass `issue_number` as integer). Check whether the ticket's state falls in a `group == "completed"` or `group == "cancelled"` state. If not: halt with `Ticket <TICKET-ID> is not in a completed state (current: <state_name>). Reconciliation requires a completed ticket. Close the ticket in Plane or verify the correct spec path.` This matches the brief's "warn-and-halt" requirement — reconciliation targets shipped work, so a non-completed ticket signals the wrong spec or premature invocation.
 
 Print a one-line preflight summary, then continue.
 
@@ -22,7 +26,7 @@ Goal: identify what code actually shipped for this ticket.
 
 1. **Find the merge commit(s).** Three strategies, tried in order:
    a. `git log --all --oneline --grep="<TICKET-ID>" -- .` — matches commit messages containing the ticket ID.
-   b. Look up the Plane ticket via `mcp__claude_ai_Vigil_Harbor_MCP_Server__memory_search` with `tags: ["plane_work_item", "<TICKET-ID>"]`, `namespace` from preflight. Parse the description for PR references (`PR #N`, `#N`, `github.com/.../pull/N`).
+   b. Look up the Plane ticket via the MCP memory server's search capability (e.g., `mcp__claude_ai_Vigil_Harbor_MCP_Server__memory_search` in Claude Code, or the equivalent semantic-search tool in your host) with `tags: ["plane_work_item", "<TICKET-ID>"]`, `namespace` from preflight. Parse the description for PR references (`PR #N`, `#N`, `github.com/.../pull/N`).
    c. If neither yields results, prompt the user: `Could not find merge commit for <TICKET-ID>. Enter PR number or commit SHA:`
 
 2. **Read the shipped diff.** Branch on identifier type:
@@ -100,8 +104,8 @@ The `RECONCILED: yes` status requires: all acceptance criteria Met or Unverifiab
 ## Tool-use notes
 
 - Read, Grep for code verification. `gh pr view` / `gh pr diff` for PR data.
-- `mcp__claude_ai_Vigil_Harbor_MCP_Server__memory_search` for Plane ticket lookup.
-- `mcp__claude_ai_Plane__list_states` and `mcp__claude_ai_Plane__retrieve_work_item_by_identifier` for state verification.
+- MCP memory server's search capability (e.g., `mcp__claude_ai_Vigil_Harbor_MCP_Server__memory_search` in Claude Code, or the equivalent semantic-search tool in your host) for Plane ticket lookup.
+- Plane MCP server's state-list and work-item-lookup capabilities (e.g., `mcp__claude_ai_Plane__list_states` and `mcp__claude_ai_Plane__retrieve_work_item_by_identifier` in Claude Code, or the equivalents in your host's Plane integration) for state verification.
 - Bash for `git log --grep` (read-only).
 - Write for the reconciliation report.
 - This skill is read-only. It must never edit code files, spec files, or wiki files.
