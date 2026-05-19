@@ -16,7 +16,11 @@ Invoked as: `/spec-retire <spec-path>` or `/spec-retire <spec-path> --partial`.
 3. Confirm the reconciliation report exists alongside the spec (same directory, `<TICKET-ID>.reconciliation.md` or `reconciliation.md`). If not: halt with `Reconciliation report not found. Run /spec-reconcile <spec-path> first.`
 4. Read the reconciliation report's last non-blank line. Parse `RECONCILED: <yes|no> DRIFT: <n>`. If `RECONCILED: no`, warn: `Spec has unmet acceptance criteria. Review the reconciliation report before proceeding. Continue anyway? [y/N]`. Halt on N.
 5. Read `<project_root>/CLAUDE.md`. Identify the wiki path. Confirm the wiki directory exists.
-6. Read `~/.claude/skills/ship-spec/states.json` (`~/.claude/` on Unix; `%USERPROFILE%\.claude\` on Windows). Look up ticket prefix to get `project_id` and `namespace`. If prefix not found, warn: `Project prefix "<project_prefix>" not found in states.json. Skipping Plane state gate — entering partial-retire mode.` Set `force_partial_retire = true` and skip Phase 1 entirely (no `project_id` means Plane calls cannot proceed).
+6. Read `~/.claude/skills/ship-spec/states.json` (`~/.claude/` on Unix; `%USERPROFILE%\.claude\` on Windows). Handle failure modes — all fall back to partial-retire since `project_id`/`namespace` are unavailable:
+   - **File missing or unreadable:** Warn: `states.json missing or unreadable — skipping Plane state gate, entering partial-retire mode.` Set `force_partial_retire = true`.
+   - **Invalid JSON:** Warn: `states.json contains invalid JSON — skipping Plane state gate, entering partial-retire mode.` Set `force_partial_retire = true`.
+   - **Prefix not found:** Warn: `Project prefix "<project_prefix>" not found in states.json. Skipping Plane state gate — entering partial-retire mode.` Set `force_partial_retire = true`.
+   In all three cases, skip Phase 1 entirely (no `project_id` means Plane calls cannot proceed).
 7. Check for `--partial` flag in invocation args. If present, set `force_partial_retire = true`.
 
 Print a one-line preflight summary, then continue.

@@ -194,6 +194,7 @@ or
 
 ## Test plan
 
+(When the resolved test command is `N/A`, replace the first bullet with `- [x] Tests: N/A — doc-only/ops-only change, no test artifacts produced` and omit the test-output file link.)
 - [x] `<combined test command>` — <N>/<N> pass (full output: docs/specs/TODO/<TICKET-ID>.test-output.txt)
 - [x] `<build command, if separate>` — clean
 - [x] [smoke check on real data, if applicable]
@@ -215,10 +216,17 @@ Capture the returned PR URL.
 
 ## Phase 6 — Plane update
 
-1. Read `states.json` (already loaded at preflight). Look up the ticket prefix to get `project_id` and `review_state_id`.
-2. Use `review_state_id` directly as the target state for the flip. If `review_state_id` is absent or empty, warn and skip the state flip — print available state names from `states.json` so the user can update manually.
-3. Call the Plane MCP server's work-item state-update capability (e.g., `mcp__plane__update_work_item` in Claude Code, or the equivalent in your host's Plane integration) — set the ticket's state to the resolved review state.
-4. Call the Plane MCP server's work-item comment capability (e.g., `mcp__plane__create_work_item_comment` in Claude Code, or the equivalent in your host's Plane integration) — add: `PR opened: <pr-url>`.
+1. **Re-check Plane reachability.** Call the same Plane MCP project-list capability used in preflight step 8 (e.g., `mcp__plane__list_projects` in Claude Code, or the equivalent in your host's Plane integration). If it fails, skip all remaining Phase 6 steps and print:
+   ```
+   Plane unreachable — skipping state update and PR comment.
+   To complete manually:
+     1. Move <TICKET-ID> to review state in Plane
+     2. Comment on the ticket: "PR opened: <pr-url>"
+   ```
+2. Read `states.json` (already loaded at preflight). Look up the ticket prefix to get `project_id` and `review_state_id`.
+3. Use `review_state_id` directly as the target state for the flip. If `review_state_id` is absent or empty, warn and skip the state flip — print available state names from `states.json` so the user can update manually.
+4. Call the Plane MCP server's work-item state-update capability (e.g., `mcp__plane__update_work_item` in Claude Code, or the equivalent in your host's Plane integration) — set the ticket's state to the resolved review state.
+5. Call the Plane MCP server's work-item comment capability (e.g., `mcp__plane__create_work_item_comment` in Claude Code, or the equivalent in your host's Plane integration) — add: `PR opened: <pr-url>`.
 
 ## Phase 7 — Final summary (worktree stays alive)
 
@@ -230,7 +238,7 @@ Print final summary:
 
 PR:       <pr-url>
 Spec:     docs/specs/TODO/<TICKET-ID>.spec.md
-Tests:    docs/specs/TODO/<TICKET-ID>.test-output.txt
+Tests:    docs/specs/TODO/<TICKET-ID>.test-output.txt  (omit this line when test command is N/A)
 Branch:   <branch>
 Worktree: <worktree-path> (kept alive for review fixes)
 
