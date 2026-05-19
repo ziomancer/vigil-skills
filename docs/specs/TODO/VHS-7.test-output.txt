@@ -1,0 +1,36 @@
+=== Test gate: python sync.py install --dry-run && python sync.py install ===
+
+$ python sync.py install --dry-run
+  [WRITE/dry] skills/ship-spec\SKILL.md  (differ)
+  [WRITE/dry] skills/ship-spec\states.json  (differ)
+  [WRITE/dry] skills/spec-cycle\SKILL.md  (differ)
+  [WRITE/dry] skills/spec-reconcile\SKILL.md  (differ)
+  [WRITE/dry] skills/spec-retire\SKILL.md  (differ)
+  [WRITE/dry] agents/spec-reviewer-conventions.md  (differ)
+  [WRITE/dry] agents/spec-reviewer-correctness.md  (differ)
+  [WRITE/dry] agents/spec-reviewer-edge-cases.md  (differ)
+
+Dry run - 8 action(s) would be applied.
+
+$ python sync.py install
+  [WRITE] skills/ship-spec\SKILL.md  (differ)
+  [WRITE] skills/ship-spec\states.json  (differ)
+  [WRITE] skills/spec-cycle\SKILL.md  (differ)
+  [WRITE] skills/spec-reconcile\SKILL.md  (differ)
+  [WRITE] skills/spec-retire\SKILL.md  (differ)
+  [WRITE] agents/spec-reviewer-conventions.md  (differ)
+  [WRITE] agents/spec-reviewer-correctness.md  (differ)
+  [WRITE] agents/spec-reviewer-edge-cases.md  (differ)
+
+8 action(s) applied.
+
+Exit code: 0
+
+=== Grep audit: zero hardcoded MCP tool names outside (e.g., ...) pattern ===
+
+$ grep -rE "mcp__(plane__|claude_ai_Plane__|claude_ai_Vigil_Harbor_MCP_Server__)" <all 8 files>
+
+All 19 matches are inside "(e.g., `mcp__...` in Claude Code, or the equivalent...)" capability descriptions.
+Zero bare hardcoded tool names remain.
+
+Exit code: 0 (matches found, all in expected pattern)

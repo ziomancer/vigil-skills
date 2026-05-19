@@ -17,6 +17,7 @@ This skill assumes `/spec-cycle` has already produced a converged spec. It imple
 3. Read `<project_root>/CLAUDE.md`. Note project-level conventions (build, lint, test, etc.) — used as fallback in step 4 and as reference during Phase 2 implementation.
 4. **Resolve the test command (single source of truth).**
    1. **Spec § Test command first.** Read `<spec-path>` for a `## Test command` section. If present, use the command(s) listed there verbatim. The spec is authoritative because the spec author chose it for *this* change (TS vs. Python, single test file vs. full suite, specific interpreter, etc.).
+      **Exception: `N/A` test command.** After reading the `## Test command` section, extract its raw text content (strip markdown code fences if present, trim leading/trailing whitespace). If the resulting string matches `N/A` (case-insensitive), record the resolved test command as `N/A` and do not fall through to step 4.2 or 4.3. When Phase 3 encounters a resolved test command of `N/A`, skip the test gate loop entirely — Phase 2 (implementation) still runs normally, then proceed directly to Phase 4 (commit). The spec's `## Test plan` review checklist is the quality gate for doc-only and ops-only changes.
    2. **CLAUDE.md "Build & Run" second.** If the spec has no `## Test command` section, fall back to project-level commands. Form a combined command: `<build> && <test> && <any extra checks>`. For a TS monorepo this might be `npm run build && npm test && npm run lint`.
    3. **Fail loud if neither yields a runnable command.** Halt with:
       ```
@@ -36,8 +37,8 @@ This skill assumes `/spec-cycle` has already produced a converged spec. It imple
    Capture the result as `<default-branch>`. Used in Phase 1 (branch cut from) and Phase 5 (PR base, implicit). Halt at preflight if both commands return empty.
 6. `git status --short` — informational only; the worktree flow in Phase 1 doesn't touch the user's primary tree, so uncommitted changes there don't gate this skill.
 7. `gh auth status` — confirm GitHub CLI is authenticated. Halt if not.
-8. `mcp__plane__list_projects` — confirm Plane MCP is reachable. Warn-and-proceed on failure.
-9. Read `skills/ship-spec/states.json` (from `~/.claude/skills/ship-spec/states.json` as installed by `sync.py`). Look up the ticket prefix (e.g., `MCP` from `MCP-33`). Confirm the prefix exists and has a `project_id` and `states` map. If the prefix is missing entirely, **halt** — the project must be added to states.json before ship-spec can manage it. If `review_state_id` is missing or empty, continue — Phase 6 will warn and skip the state flip.
+8. Confirm Plane MCP is reachable: call the Plane MCP server's project-list capability (e.g., `mcp__plane__list_projects` in Claude Code, or the equivalent in your host's Plane integration). Warn-and-proceed on failure.
+9. Read `skills/ship-spec/states.json` (from `~/.claude/skills/ship-spec/states.json` — `~/.claude/` on Unix; `%USERPROFILE%\.claude\` on Windows — as installed by `sync.py`). Look up the ticket prefix (e.g., `MCP` from `MCP-33`). Confirm the prefix exists and has a `project_id` and `states` map. If the prefix is missing entirely, **halt** — the project must be added to states.json before ship-spec can manage it. If `review_state_id` is missing or empty, continue — Phase 6 will warn and skip the state flip.
 
 **Preflight notes:**
 - **Python tests, prefer module-form invocation.** When the resolved test command is Python-based, write it as `<interpreter> -m pytest …` (e.g., `python -m pytest`, or pin the interpreter with a full path like `<full-path-to-python> -m pytest`) rather than bare `pytest`. Bare `pytest` resolves to whichever `pytest` executable is first on `PATH`, which on multi-Python systems often points to an interpreter that doesn't have the project's deps installed. Module-form forces resolution into the same interpreter that has the deps. This is discipline at the spec/CLAUDE.md authoring layer; ship-spec passes the command through as-is.
@@ -216,8 +217,8 @@ Capture the returned PR URL.
 
 1. Read `states.json` (already loaded at preflight). Look up the ticket prefix to get `project_id` and `review_state_id`.
 2. Use `review_state_id` directly as the target state for the flip. If `review_state_id` is absent or empty, warn and skip the state flip — print available state names from `states.json` so the user can update manually.
-3. `mcp__plane__update_work_item` — set the ticket's state to the resolved review state.
-4. `mcp__plane__create_work_item_comment` — add: `PR opened: <pr-url>`.
+3. Call the Plane MCP server's work-item state-update capability (e.g., `mcp__plane__update_work_item` in Claude Code, or the equivalent in your host's Plane integration) — set the ticket's state to the resolved review state.
+4. Call the Plane MCP server's work-item comment capability (e.g., `mcp__plane__create_work_item_comment` in Claude Code, or the equivalent in your host's Plane integration) — add: `PR opened: <pr-url>`.
 
 ## Phase 7 — Final summary (worktree stays alive)
 
@@ -253,7 +254,7 @@ Do not auto-update any project wiki — that happens post-merge once the merge S
 
 - Read, Edit, Write for implementation.
 - Bash for git, gh, package-manager commands — fully scripted, no interactive prompts.
-- mcp__plane__* for ticket lookup, state discovery, state update, comment.
+- Plane MCP tools (project listing, work-item state update, work-item comment) — or the equivalent capabilities in your host's Plane integration.
 - Do not run `git rebase -i`, `git add -i`, or any interactive command.
 - Do not push to `<default-branch>`. Do not force-push the feature branch unless the user explicitly asks.
 - Do not skip pre-commit hooks (`--no-verify`). If a hook fails, fix the underlying issue.

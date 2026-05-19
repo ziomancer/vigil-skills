@@ -22,6 +22,7 @@ Before anything else:
 
 1. Resolve `<brief-path>` from the user's invocation. The expected shape is `docs/specs/TODO/<TICKET-ID>.brief.md`. Extract `ticket_id` from the filename (uppercase, e.g., `PROJ-123`) and `project_root` from the cwd (the directory containing `CLAUDE.md`).
 2. Confirm the brief exists. If not, halt with: `Brief not found at <path>. Provide a path relative to <project_root>.`
+   **Local-only ticket IDs.** If the filename's ticket ID does not match an existing Plane issue (the MCP memory lookup in Phase 1 returns zero results, and no Plane issue is reachable), treat the brief as local-only. The skill proceeds using the brief alone — this is the normal fallback path, not an error. Create the Plane issue when scope is confirmed, then rename all `<TICKET-ID>.*` artifacts under `docs/specs/TODO/` (brief, spec, reviews directory, test output) to match the real ticket ID.
 3. Read `<project_root>/CLAUDE.md`. Identify:
    - Test commands from the "Build & Run" section (e.g., for a TS monorepo: `npm test`, `npm run build`, `npm run lint` — use whatever your CLAUDE.md states).
    - The wiki path, if any. If CLAUDE.md hardcodes a username-bearing path that doesn't exist on this machine, replace the username segment with the current user (Windows: `$env:USERNAME`; Unix: `$USER`) and re-check.
@@ -94,8 +95,8 @@ Before anything else:
       - On `Proceed`: log `upstream: N stale commits — user proceeded` and continue to step 5.
       - On `Abort`: halt with message `Spec-cycle aborted: upstream staleness — re-evaluate brief or update fork.`
 
-5. Confirm Plane MCP is reachable: call `mcp__plane__list_projects`. On failure, **warn and proceed** — the brief is the local source of truth.
-6. Read `~/.claude/skills/ship-spec/states.json` (installed by `sync.py`). If the file is not found, default `namespace` to `"plane"` and warn — ticket lookup still works (MCP-33 fallback namespace is `"plane"` for unmapped projects); namespace-scoped precision is degraded but not broken. If the file exists but cannot be parsed (invalid JSON or unexpected shape), warn and default `namespace` to `"plane"`. Otherwise, extract the ticket prefix (the portion before the first hyphen in `ticket_id`, e.g., `"PROJ"` from `"PROJ-123"`) and look up that prefix in `states.json` to get the `namespace`. If the prefix is not in `states.json`, default `namespace` to `"plane"` and warn. Pass `namespace` to Phase 1's own `memory_search` call and to each reviewer agent in step 2b.
+5. Confirm Plane MCP is reachable: call the Plane MCP server's project-list capability (e.g., `mcp__plane__list_projects` in Claude Code, or the equivalent in your host's Plane integration). On failure, **warn and proceed** — the brief is the local source of truth.
+6. Read `~/.claude/skills/ship-spec/states.json` (`~/.claude/` on Unix; `%USERPROFILE%\.claude\` on Windows) (installed by `sync.py`). If the file is not found, default `namespace` to `"plane"` and warn — ticket lookup still works (MCP-33 fallback namespace is `"plane"` for unmapped projects); namespace-scoped precision is degraded but not broken. If the file exists but cannot be parsed (invalid JSON or unexpected shape), warn and default `namespace` to `"plane"`. Otherwise, extract the ticket prefix (the portion before the first hyphen in `ticket_id`, e.g., `"PROJ"` from `"PROJ-123"`) and look up that prefix in `states.json` to get the `namespace`. If the prefix is not in `states.json`, default `namespace` to `"plane"` and warn. Pass `namespace` to Phase 1's own `memory_search` call and to each reviewer agent in step 2b.
 
 Print a one-line preflight summary — including the upstream check result token (clean / skipped / N stale — user proceeded) — then continue.
 
@@ -103,13 +104,14 @@ Print a one-line preflight summary — including the upstream check result token
 
 Output path: `docs/specs/TODO/<TICKET-ID>.spec.md`.
 
-Read the brief, the linked Plane ticket (call `mcp__claude_ai_Vigil_Harbor_MCP_Server__memory_search` with `tags: ["plane_work_item", "<TICKET-ID>"]`, `namespace` from step 6, `source_system: "plane"`, `max_results: 1`; if zero results or error, proceed using the brief alone), and any files the brief points at. Write a spec that covers, at minimum:
+Read the brief, the linked Plane ticket (call the MCP memory server's search capability — e.g., `mcp__claude_ai_Vigil_Harbor_MCP_Server__memory_search` in Claude Code, or the equivalent semantic-search tool in your host — with `tags: ["plane_work_item", "<TICKET-ID>"]`, `namespace` from step 6, `source_system: "plane"`, `max_results: 1`; if the memory server is unavailable or returns zero results, proceed using the brief alone), and any files the brief points at. Write a spec that covers, at minimum:
 
 - **Goal** — what this ships, in one paragraph
 - **Scope** — files to change, new files to create, files to leave alone
 - **Design** — the proposed implementation, including any non-obvious decisions and their rationale
 - **Test plan** — what tests will be added, what existing tests will be updated, what regression tests guard against the bug class
 - **Test command** — the exact shell command(s) to run the test plan. ship-spec treats this as source of truth for its test gate (see ship-spec Phase 0 step 4); if absent, ship-spec falls back to CLAUDE.md "Build & Run" and halts loudly if neither yields a runnable command. For Python work prefer module-form (`python -m pytest …`) over bare `pytest` to avoid multi-interpreter footguns. Pin the interpreter explicitly (e.g., `<full-path-to-python> -m pytest <files>`) when the project has multiple Python installs on PATH (common on Windows).
+  For documentation-only or ops-only specs where no code ships (infrastructure configs, runbooks, wiki-only deliverables): set `## Test plan` to a review checklist describing what a human reviewer should verify. Set `## Test command` to `N/A`. When `ship-spec` encounters `Test command: N/A`, it skips the automated test gate (Phase 3) entirely. The review checklist in Test plan serves as the quality gate instead.
 - **Done when** — bullet list mapped 1:1 to the brief's acceptance criteria
 - **Out of scope** — explicit fences carried from the brief
 
@@ -168,6 +170,8 @@ total_p0p1 = sum of P0+P1 from RED status lines (GREEN contributes 0)
 ```
 
 If `total_p0p1 == 0`: break the loop. Spec is green at round N.
+
+A reviewer may return `STATUS: RED` with only P2+ findings (P0=0 P1=0). This does not block the loop since the gate checks `total_p0p1 == 0`. P2+ items are advisory — they are carried forward as spec notes in the `## Deferred (P2+)` section but do not prevent the spec from going green.
 
 ### 2e. Revise (rounds 1–3) or rewrite (round 4)
 
@@ -275,7 +279,7 @@ After printing the checklist, **do not auto-proceed**. The user invokes `/ship-s
 - Read, Edit, Write for spec authorship and revision.
 - Bash for `git fetch upstream` (ref update only, bounded by timeout), `git log` / `git remote` / `git rev-list` / `git symbolic-ref` / `sed` (read-only), and `mkdir` for review subdirs.
 - Agent calls (parallel) for the three reviewers.
-- mcp__claude_ai_Vigil_Harbor_MCP_Server__memory_search for Plane ticket lookup (tags: [plane_work_item, <TICKET-ID>], namespace from states.json). Falls back to brief alone on zero results or error response.
+- MCP memory server's search capability (e.g., `mcp__claude_ai_Vigil_Harbor_MCP_Server__memory_search` in Claude Code, or the equivalent semantic-search tool in your host) for Plane ticket lookup (tags: [plane_work_item, <TICKET-ID>], namespace from states.json). Falls back to brief alone on zero results or error response.
 - Do not commit. Do not push. Do not open PRs. That's `/ship-spec`'s job.
 
 ## Failure modes to watch for
