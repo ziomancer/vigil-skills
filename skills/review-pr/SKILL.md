@@ -135,13 +135,13 @@ Only if fixes were made:
    ```bash
    HEAD_SHORT_SHA=$(git rev-parse --short HEAD)
    ```
-   For each fix-categorized finding from this round, post an inline reply on the originating review-comment thread (see Step 6c for the reply mechanism and error handling). Then continue to Step 6a.
+   For each fix-categorized finding from this round, post an inline reply on the originating review-comment thread (see Step 6c for the reply mechanism and error handling). Then post non-fix replies for all skip/duplicate/already-fixed findings from this round (see Step 6c). Then continue to Step 6a.
 
 **Note:** Pushing triggers CodeRabbit's auto-incremental review of the new commit. Step 6 waits for it before attempting thread resolution.
 
 ## Step 6: Wait for re-review, verify thread resolution, poll for approval
 
-Per-thread `Resolved in <sha>` replies on fix-categorized finding threads are the primary closure mechanism. Threads for non-fix findings (skip/duplicate/already-fixed) are left open for CodeRabbit and the user to handle naturally. Auto-approval (`APPROVED` verdict) requires all threads resolved AND `request_changes_workflow: true` AND pre-merge checks passing. The skill never posts `@coderabbitai resolve` — if threads don't auto-resolve on hash reply, the report offers the manual command.
+Per-thread replies are the primary closure mechanism for all findings. Fix-categorized findings get `Resolved in <sha>` replies. Non-fix findings (skip/duplicate/already-fixed) get a reply stating the categorization and reasoning — this creates a record and lets CodeRabbit resolve threads naturally without force-resolving. Auto-approval (`APPROVED` verdict) requires all threads resolved AND `request_changes_workflow: true` AND pre-merge checks passing. The skill never posts `@coderabbitai resolve` — if threads don't auto-resolve on reply, the report offers the manual command.
 
 **Fast-path predicate (evaluated once, after Step 5):**
 
@@ -237,11 +237,11 @@ If the new review has NEW findings not present in the original review:
 
 If the incremental review has no new actionable findings (or only duplicates/already-fixed), proceed to 6d.
 
-### 6c. Per-thread commit-hash replies (mechanism)
+### 6c. Per-thread replies (mechanism)
 
-Step 6c is not a standalone post-loop step — per-thread replies are posted immediately after each push (Step 5 and each Step 6b fix-push cycle). This ensures each reply contains the correct SHA for the round that fixed the finding.
+Step 6c is not a standalone post-loop step — per-thread replies are posted immediately after each push (Step 5 and each Step 6b fix-push cycle). Fix replies are posted first (they reference the push SHA), then non-fix replies. If no fixes were pushed (all non-fix), non-fix replies are still posted after Step 3 triage completes.
 
-**Reply mechanism:**
+**Fix reply mechanism:**
 
 For each fix-categorized finding from the current round, post an inline reply on the originating review-comment thread:
 
@@ -251,13 +251,29 @@ gh api -X POST \
   -f body="Resolved in <HEAD_SHORT_SHA>"
 ```
 
-Where `<COMMENT_ID>` is the review-comment ID from the finding's triage. For findings from Step 3 (initial triage), the comment ID comes from Step 2's inline-comment fetch. For findings from Step 6b (incremental review triage), the comment ID comes from the incremental review's comment fetch (filtered to the new review ID). Each round uses its own comment IDs.
+**Non-fix reply mechanism:**
 
-**Guard for body-level findings:** If a fix-categorized finding has no associated comment ID (e.g., a review-body-level nitpick that was categorized as fix), skip the reply for that finding. Note the skip in the Step 6e report: `Reply skipped: finding has no inline comment ID (review-body-level)`.
+For each non-fix finding (skip/duplicate/already-fixed) from the current round, post an inline reply with the categorization and reasoning:
+
+```bash
+gh api -X POST \
+  repos/<OWNER>/<REPO>/pulls/<N>/comments/<COMMENT_ID>/replies \
+  -f body="<REPLY_BODY>"
+```
+
+Reply body templates by category:
+
+- **skip**: `Skipped — <reason from triage>` (e.g., "Skipped — style preference; current pattern is consistent with the rest of the codebase", "Skipped — suggestion would over-engineer a straightforward path")
+- **duplicate**: `Duplicate of earlier finding — no action taken.`
+- **already-fixed**: `Already addressed in a prior commit — no action needed.`
+
+Keep reasoning concise (1–2 sentences). The goal is a record of the judgment call, not a debate.
+
+**Comment ID sourcing:** `<COMMENT_ID>` is the review-comment ID from the finding's triage. For findings from Step 3 (initial triage), the comment ID comes from Step 2's inline-comment fetch. For findings from Step 6b (incremental review triage), the comment ID comes from the incremental review's comment fetch (filtered to the new review ID). Each round uses its own comment IDs.
+
+**Guard for body-level findings:** If a finding has no associated comment ID (e.g., a review-body-level nitpick), skip the reply for that finding. Note the skip in the Step 6e report: `Reply skipped: finding has no inline comment ID (review-body-level)`.
 
 **Error handling:** If a reply call fails (404 = comment deleted, 403 = permission issue, 422 = thread locked, 429 = rate limited), log the failure and continue. Do not abort the loop. On 429 with a `Retry-After` header, wait the indicated duration and retry once. Failed reply count is reported in Step 6e.
-
-**If no findings were fix-categorized** (all non-fix, no push), no replies are posted.
 
 ### 6d. Poll for thread resolution + approval
 
@@ -310,8 +326,8 @@ Do not auto-fire the command.
 **Phase 2 — Wait for review verdict to update.**
 
 **Enter Phase 2 only if ALL CodeRabbit threads are resolved.** This means:
-- If all threads resolved (all findings were fix-categorized and all fix-threads resolved) → enter Phase 2
-- If any threads unresolved (non-fix threads open, or fix-threads stuck) → **skip Phase 2**; report that `CHANGES_REQUESTED` is expected while threads remain open
+- If all threads resolved (fix-threads via SHA reply, non-fix threads via reasoning reply) → enter Phase 2
+- If any threads unresolved (reply didn't trigger resolution, or threads stuck) → **skip Phase 2**; report that `CHANGES_REQUESTED` is expected while threads remain open
 - If `request_changes_workflow` is not enabled (per Step 1b) → skip Phase 2 as before
 
 Once entered, poll for the review verdict:
@@ -333,14 +349,14 @@ Outcomes:
 Review round complete for PR #<N>:
 - Fixed: X findings in commit <short-sha> (list them)
   [If multi-round: "Round 1: A findings in <sha1>; Round 2: B findings in <sha2>"]
-- Skipped: Y findings (list with reasons) — threads left open
-- Already fixed: Z findings (list them) — threads left open
+- Skipped: Y findings (list with reasons) — replied with reasoning
+- Already fixed: Z findings (list them) — replied
 - Duplicates: W
 - Incremental review rounds: M
 - Reply failures: F (list comment IDs and error codes, if any)
 - Reply skipped: G (body-level findings with no inline comment ID, if any)
-- Thread status: X resolved via reply / Y left open (non-fix)
-  [If fix-threads unresolved: "N fix-threads still unresolved — to force-resolve: gh pr comment <N> --body '@coderabbitai resolve'"]
+- Thread status: X resolved / Y unresolved
+  [If threads unresolved: "N threads still unresolved — to force-resolve: gh pr comment <N> --body '@coderabbitai resolve'"]
 - CodeRabbit verdict: APPROVED / CHANGES_REQUESTED (expected — N threads open) / not polled (request_changes_workflow disabled)
 - Fast path: yes — re-run /review-pr if CodeRabbit posts new findings / no
 - Review completion signal: ci-check / ci-check (FAILURE) / ci-check (timeout) / reviews-api-fallback / pre-existing-approval / fast-path
@@ -349,17 +365,17 @@ Review round complete for PR #<N>:
 ## Edge cases
 
 - **No new comments**: report "Nothing to review" and exit
-- **All findings are non-fix (skip/duplicate/already-fixed)**: no push, no replies, no resolution — report only, threads stay open
+- **All findings are non-fix (skip/duplicate/already-fixed)**: no push, but replies are posted with reasoning for each finding
 - **CodeRabbit review pending**: "Review in progress — wait and retry"
 - **CI failing from unrelated issue**: warn user but still process review findings (the review may contain the fix)
 - **Branch protection blocks push**: report the error, don't retry
 - **Incremental review loop**: cap at 3 fix-push-review cycles to prevent infinite loops
 - **CodeRabbit timeout/down**: if polls consistently timeout with no CodeRabbit activity, report and stop
-- **Stale CHANGES_REQUESTED with no new findings**: no new findings → no triage → report "no findings but N prior-round threads still open" with manual resolve command (`gh pr comment <N> --body "@coderabbitai resolve"`)
+- **Stale CHANGES_REQUESTED with no new findings**: no new findings → no triage → report "no findings but N prior-round threads still unresolved" with manual resolve command (`gh pr comment <N> --body "@coderabbitai resolve"`)
 - **Fix-threads don't auto-resolve on hash reply**: report unresolved threads + manual resolve command. No automated fallback
 - **Reply API call fails (404/403/422)**: log failure, continue loop, report count in 6e
 - **Reply API rate-limited (429)**: wait `Retry-After` duration, retry once. If still 429, log and continue
-- **Mixed fix+non-fix findings, all fix-threads resolve**: skip Phase 2 (non-fix threads open → no APPROVED expected), report non-fix threads
+- **Mixed fix+non-fix findings, all threads resolve**: all threads replied to (fix with SHA, non-fix with reasoning), poll, Phase 2 → APPROVED
 - **All fix, no non-fix, threads resolve**: per-thread replies, poll, Phase 2 → APPROVED
 - **Multi-round fix-push-review**: per-thread replies posted after each push with correct per-round SHA
 - **Comment deleted between triage and reply**: 404 from reply API — logged, counted, non-fatal
