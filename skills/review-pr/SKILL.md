@@ -365,7 +365,7 @@ Review round complete for PR #<N>:
 ## Edge cases
 
 - **No new comments**: report "Nothing to review" and exit
-- **All findings are non-fix (skip/duplicate/already-fixed)**: no push, but replies are posted with reasoning for each finding
+- **All findings are non-fix (skip/duplicate/already-fixed)**: no push, but replies are posted with reasoning for each inline finding (body-level findings without a comment ID are skipped per the guard in 6c)
 - **CodeRabbit review pending**: "Review in progress — wait and retry"
 - **CI failing from unrelated issue**: warn user but still process review findings (the review may contain the fix)
 - **Branch protection blocks push**: report the error, don't retry
