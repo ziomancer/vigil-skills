@@ -46,7 +46,7 @@ These skills delegate project-specific rules (test commands, await guardrails, l
 
 - **Python 3.8+** for `sync.py` (stdlib only — no pip install).
 - **Claude Code** — skills and subagents are Claude Code features.
-- For `/spec-cycle` and `/ship-spec`: a Plane.so workspace with the Plane MCP server, and `gh` CLI authenticated.
+- For `/spec-cycle` and `/ship-spec`: a Plane.so workspace with the plane-proxy MCP server, and `gh` CLI authenticated.
 - For `/review-pr`: `gh` CLI authenticated, CodeRabbit configured on your repo.
 
 ## License

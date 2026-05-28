@@ -31,8 +31,8 @@ If `force_partial_retire` is set (from `--partial` flag or missing prefix in pre
 
 Otherwise:
 
-1. Call the Plane MCP server's state-list capability (e.g., `mcp__claude_ai_Plane__list_states` in Claude Code, or the equivalent in your host's Plane integration) with `project_id` to get the full state map with groups.
-2. Look up the ticket via the Plane MCP server's work-item-lookup capability (e.g., `mcp__claude_ai_Plane__retrieve_work_item_by_identifier` in Claude Code, or the equivalent in your host) with `project_identifier` and `issue_number` (pass `issue_number` as integer).
+1. Call the plane-proxy's state-list capability (e.g., `mcp__plane__list_states` in Claude Code, or the equivalent in your host's Plane integration) with `project_id` to get the full state map with groups.
+2. Look up the ticket via the plane-proxy's work-item-lookup capability (e.g., `mcp__plane__retrieve_work_item_by_identifier` in Claude Code, or the equivalent in your host) with `project_identifier` and `issue_number` (pass `issue_number` as integer).
 3. Match the ticket's `state` UUID against the state map to determine the group.
 4. Determine mode:
    - `group == "completed"` or `group == "cancelled"` -> **full-retire**.
@@ -252,7 +252,7 @@ Suggested commits:
 - Write for wiki entries and log.md.
 - Edit for state.md updates (surgical line replacement).
 - Bash for `git mv`, `mkdir -p`, `grep -F` (idempotency check), `grep -rl` / `grep -c` (fast-path coverage checks), `sed` (Wiki-ready section extraction), `git ls-files --error-unmatch`, `git status`.
-- Plane MCP server's state-list and work-item-lookup capabilities (e.g., `mcp__claude_ai_Plane__list_states` and `mcp__claude_ai_Plane__retrieve_work_item_by_identifier` in Claude Code, or the equivalents in your host's Plane integration) for state gate.
+- plane-proxy's state-list and work-item-lookup capabilities (e.g., `mcp__plane__list_states` and `mcp__plane__retrieve_work_item_by_identifier` in Claude Code, or the equivalents in your host's Plane integration) for state gate.
 - This skill mutates files in both the target repo and the wiki repo. All mutations happen in Phase 4, after user confirmation in Phase 3.
 
 ## Failure modes

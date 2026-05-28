@@ -37,7 +37,7 @@ This skill assumes `/spec-cycle` has already produced a converged spec. It imple
    Capture the result as `<default-branch>`. Used in Phase 1 (branch cut from) and Phase 5 (PR base, implicit). Halt at preflight if both commands return empty.
 6. `git status --short` — informational only; the worktree flow in Phase 1 doesn't touch the user's primary tree, so uncommitted changes there don't gate this skill.
 7. `gh auth status` — confirm GitHub CLI is authenticated. Halt if not.
-8. Confirm Plane MCP is reachable: call the Plane MCP server's project-list capability (e.g., `mcp__plane__list_projects` in Claude Code, or the equivalent in your host's Plane integration). Warn-and-proceed on failure.
+8. Confirm plane-proxy is reachable: call the plane-proxy's project-list capability (e.g., `mcp__plane__list_projects` in Claude Code, or the equivalent in your host's Plane integration). Warn-and-proceed on failure.
 9. Read `skills/ship-spec/states.json` (from `~/.claude/skills/ship-spec/states.json` — `~/.claude/` on Unix; `%USERPROFILE%\.claude\` on Windows — as installed by `sync.py`). Look up the ticket prefix (e.g., `MCP` from `MCP-33`). Confirm the prefix exists and has a `project_id` and `states` map. If the prefix is missing entirely, **halt** — the project must be added to states.json before ship-spec can manage it. If `review_state_id` is missing or empty, continue — Phase 6 will warn and skip the state flip.
 
 **Preflight notes:**
@@ -216,7 +216,7 @@ Capture the returned PR URL.
 
 ## Phase 6 — Plane update
 
-1. **Re-check Plane reachability.** Call the same Plane MCP project-list capability used in preflight step 8 (e.g., `mcp__plane__list_projects` in Claude Code, or the equivalent in your host's Plane integration). If it fails, skip all remaining Phase 6 steps and print:
+1. **Re-check Plane reachability.** Call the same plane-proxy project-list capability used in preflight step 8 (e.g., `mcp__plane__list_projects` in Claude Code, or the equivalent in your host's Plane integration). If it fails, skip all remaining Phase 6 steps and print:
    ```
    Plane unreachable — skipping state update and PR comment.
    To complete manually:
@@ -225,8 +225,8 @@ Capture the returned PR URL.
    ```
 2. Read `states.json` (already loaded at preflight). Look up the ticket prefix to get `project_id` and `review_state_id`.
 3. Use `review_state_id` directly as the target state for the flip. If `review_state_id` is absent or empty, warn and skip the state flip — print available state names from `states.json` so the user can update manually.
-4. Call the Plane MCP server's work-item state-update capability (e.g., `mcp__plane__update_work_item` in Claude Code, or the equivalent in your host's Plane integration) — set the ticket's state to the resolved review state.
-5. Call the Plane MCP server's work-item comment capability (e.g., `mcp__plane__create_work_item_comment` in Claude Code, or the equivalent in your host's Plane integration) — add: `PR opened: <pr-url>`.
+4. Call the plane-proxy's work-item state-update capability (e.g., `mcp__plane__update_work_item` in Claude Code, or the equivalent in your host's Plane integration) — set the ticket's state to the resolved review state.
+5. Call the plane-proxy's work-item comment capability (e.g., `mcp__plane__create_work_item_comment` in Claude Code, or the equivalent in your host's Plane integration) — add: `PR opened: <pr-url>`.
 
 ## Phase 7 — Final summary (worktree stays alive)
 
@@ -262,7 +262,7 @@ Do not auto-update any project wiki — that happens post-merge once the merge S
 
 - Read, Edit, Write for implementation.
 - Bash for git, gh, package-manager commands — fully scripted, no interactive prompts.
-- Plane MCP tools (project listing, work-item state update, work-item comment) — or the equivalent capabilities in your host's Plane integration.
+- plane-proxy tools (project listing, work-item state update, work-item comment) — or the equivalent capabilities in your host's Plane integration.
 - Do not run `git rebase -i`, `git add -i`, or any interactive command.
 - Do not push to `<default-branch>`. Do not force-push the feature branch unless the user explicitly asks.
 - Do not skip pre-commit hooks (`--no-verify`). If a hook fails, fix the underlying issue.
