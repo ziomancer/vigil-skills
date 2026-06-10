@@ -52,7 +52,7 @@ If you don't have a wiki, omit `wiki_root` from the orchestrator prompt and the 
 
 Skills assume:
 
-- Briefs at `docs/specs/TODO/<TICKET-ID>.brief.md` (loose: just enough to get started; canonical location — alternate directories and `<TICKET-ID>-slug.md` filenames are tolerated on input, and spec artifacts still land in `docs/specs/TODO/`)
+- Briefs at `docs/specs/TODO/<TICKET-ID>.brief.md` (loose: just enough to get started). That path is the canonical *location*, but alternate directories and `<TICKET-ID>-slug.md` filenames are tolerated on input — spec artifacts still land in `docs/specs/TODO/` regardless.
 - Specs at `docs/specs/TODO/<TICKET-ID>.spec.md` (`/spec-cycle` writes here)
 - Reviews at `docs/specs/TODO/<TICKET-ID>.reviews/round-<N>/<lens>.md`
 - Test output captured to `docs/specs/TODO/<TICKET-ID>.test-output.txt`

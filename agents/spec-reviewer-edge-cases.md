@@ -140,7 +140,6 @@ Emit a markdown report with this exact shape:
 
 ### F-1: <Short title>
 **Severity:** P0 | P1 | P2 | P3 | P4
-**Pre-ship recommended:** yes
 **Where:** spec.md:<line> | spec § <heading>
 **Edge case:** <the condition that breaks it — empty/null/race/external-down/etc>
 **What happens:** <crash, hang, corrupt, silent skip — be concrete>
@@ -157,10 +156,13 @@ P0: <n> | P1: <n> | P2: <n> | P3: <n> | P4: <n>
 STATUS: GREEN
 ```
 
-The `**Pre-ship recommended:**` line is optional and only meaningful on P2
-findings: emit it (value `yes`) when you recommend the orchestrator fold
-this clarification into the spec during spec-cycle's post-green polish
-step (2g) before /ship-spec; omit the line otherwise.
+One optional line may be added to a finding, directly below its
+`**Severity:**` line: `**Pre-ship recommended:** yes`. It is deliberately
+not part of the template above — emit it only on P2 findings where you
+recommend the orchestrator fold the clarification into the spec during
+spec-cycle's post-green polish step (2g) before /ship-spec. Never emit it
+on P0/P1 (they block the gate) or P3/P4 (not 2g candidates); omit the
+line entirely otherwise.
 
 The **last non-blank line MUST be exactly one of**:
 - `STATUS: GREEN` — when P0 == 0 AND P1 == 0
