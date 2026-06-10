@@ -36,8 +36,8 @@ $ git rev-list --count HEAD..origin/master
 2
 $ git merge-base --is-ancestor HEAD origin/master
 exit=1 (1 = diverged)
-[skill] local master and origin/master have diverged (2 behind); fast-forward impossible - proceeding on the local tree.
-[skill] token: origin: behind-2 (diverged - proceeded)   [no update offered; no merge, no rebase]
+[skill] local master and origin/master have diverged (2 behind); fast-forward impossible — proceeding on the local tree.
+[skill] token: origin: behind-2 (diverged — proceeded)   [no update offered; no merge, no rebase]
 
 === PATH C: ff feasible but git aborts (uncommitted changes in the way) ===
 # setup: reset --hard origin/master~2 (clean, behind), then dirty f.txt (incoming commits touch f.txt)
@@ -53,7 +53,7 @@ Please commit your changes or stash them before you merge.
 Aborting
 Updating e8d45ff..7fda0d7
 exit=1
-[skill] git error printed verbatim above; token: origin: behind-2 (update failed - proceeded)   [no retry with merge/rebase/stash]
+[skill] git error printed verbatim above; token: origin: behind-2 (update failed — proceeded)   [no retry with merge/rebase/stash]
 
 Result: all three paths behaved per SKILL.md Phase 0 step 5e. The only mutation was the
 user-confirmed fast-forward in PATH A; PATH B and PATH C proceeded without mutating the tree.

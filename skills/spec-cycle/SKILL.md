@@ -299,7 +299,12 @@ regenerated in round N>` so the manifest always reconciles with the prior
 round's gate arithmetic. This block complements — does not replace — the
 reviewers' step-7 disk-read closure verification: the agents verify the
 author's claims against the current spec instead of inferring intent from
-a spec diff. Build it from the revision work you just did in 2e.
+a spec diff. Build it from the revision work you just did in 2e. Map each
+P0/P1 finding to exactly one line: finding ID, severity, the title copied
+from the prior-round report, then a concise disposition phrase — e.g.,
+`fixed: edited § <section>`, `reworked: deliberate direction change, see
+§ <Decision n>`, or `not applicable: <one-line reason>` — always with a
+spec § anchor the reviewer can verify.
 
 ### 2c. Persist findings
 
