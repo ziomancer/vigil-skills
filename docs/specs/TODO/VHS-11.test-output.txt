@@ -1,0 +1,59 @@
+VHS-11 origin-sync check - dry-run transcript (2026-06-10)
+Scratch repo: bare origin + clone, branch 'master', 3 commits (c1..c3).
+Walks Phase 0 step 5 of skills/spec-cycle/SKILL.md on all three mutation-adjacent paths.
+
+=== PATH A: stale local, fast-forward possible, user confirms update ===
+# setup: git reset --hard HEAD~2 (local master now behind origin/master)
+$ git remote get-url origin
+C:/Users/zioni/AppData/Local/Temp/vhs11-dryrun/origin-repo.git
+$ timeout 30 git fetch origin   # ref update only
+exit=0
+$ git symbolic-ref --short -q HEAD
+master
+$ git rev-parse --verify -q origin/master
+7fda0d7c79f8074d74a2ce04df4b415f64d79b05
+-> counterpart comparison: <cmp> = master
+$ git rev-list --count HEAD..origin/master
+2
+$ git merge-base --is-ancestor HEAD origin/master
+exit=0 (0 = ff possible)
+[skill] ORIGIN SYNC: local master is 2 commits behind origin/master.
+[skill]   1. Fast-forward update now (git merge --ff-only origin/master)
+[skill]   2. Proceed on the stale tree
+[user]  1
+$ git merge --ff-only origin/master
+Updating e8d45ff..7fda0d7
+Fast-forward
+ f.txt | 2 ++
+ 1 file changed, 2 insertions(+)
+exit=0
+[skill] token: origin: behind-2 (updated); re-validate brief + CLAUDE.md reads (step 2-3)
+
+=== PATH B: diverged - ff impossible, warn only, no update offered ===
+warning: in the working copy of 'g.txt', LF will be replaced by CRLF the next time Git touches it
+# setup: reset --hard HEAD~2 + 1 local commit (history diverged from origin/master)
+$ git rev-list --count HEAD..origin/master
+2
+$ git merge-base --is-ancestor HEAD origin/master
+exit=1 (1 = diverged)
+[skill] local master and origin/master have diverged (2 behind); fast-forward impossible — proceeding on the local tree.
+[skill] token: origin: behind-2 (diverged — proceeded)   [no update offered; no merge, no rebase]
+
+=== PATH C: ff feasible but git aborts (uncommitted changes in the way) ===
+# setup: reset --hard origin/master~2 (clean, behind), then dirty f.txt (incoming commits touch f.txt)
+$ git rev-list --count HEAD..origin/master
+2
+$ git merge-base --is-ancestor HEAD origin/master
+exit=0 (0 = ff possible)
+[user]  1 (confirms update)
+$ git merge --ff-only origin/master
+error: Your local changes to the following files would be overwritten by merge:
+	f.txt
+Please commit your changes or stash them before you merge.
+Aborting
+Updating e8d45ff..7fda0d7
+exit=1
+[skill] git error printed verbatim above; token: origin: behind-2 (update failed — proceeded)   [no retry with merge/rebase/stash]
+
+Result: all three paths behaved per SKILL.md Phase 0 step 5e. The only mutation was the
+user-confirmed fast-forward in PATH A; PATH B and PATH C proceeded without mutating the tree.
