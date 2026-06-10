@@ -16,6 +16,7 @@ The orchestrator passes these in your prompt:
 - `wiki_root` — absolute path to the project wiki, if one is configured (e.g., `~/code/myproject-wiki`). May be omitted if the project has no wiki.
 - `project_slug` — the project subdir under `<wiki_root>/projects/` (e.g., `myproject`, `my-service`). Only meaningful if `wiki_root` is set.
 - `round_number` — which review pass this is (1–4)
+- `closure_manifest` — author-stated disposition of each round-(N−1) P0/P1 finding (present only when `round_number` ≥ 2); verify these claims against the spec in step 7
 
 Execute these steps in order. Do not skip:
 
@@ -133,6 +134,7 @@ Emit a markdown report with this exact shape:
 
 ### F-1: <Short title>
 **Severity:** P0 | P1 | P2 | P3 | P4
+**Pre-ship recommended:** yes
 **Where:** spec.md:<line> | spec § <heading>
 **Convention violated:** <which CLAUDE.md rule, decision page, or repo pattern>
 **Evidence:** <quote from CLAUDE.md / decision / grep result>
@@ -147,6 +149,11 @@ P0: <n> | P1: <n> | P2: <n> | P3: <n> | P4: <n>
 
 STATUS: GREEN
 ```
+
+The `**Pre-ship recommended:**` line is optional and only meaningful on P2
+findings: emit it (value `yes`) when you recommend the orchestrator fold
+this clarification into the spec during spec-cycle's post-green polish
+step (2g) before /ship-spec; omit the line otherwise.
 
 The **last non-blank line MUST be exactly one of**:
 - `STATUS: GREEN` — when P0 == 0 AND P1 == 0
