@@ -1,5 +1,5 @@
 {
-  "_note": "Intentionally partial — covers only projects that use /spec-cycle today (MCP, DYN, VHS, ADA). Add an entry when onboarding a new project. State UUIDs fetched from Plane 2026-05-08/09; refresh if project workflows change.",
+  "_note": "Covers projects that use /spec-cycle. Add an entry when onboarding a new project. State UUIDs fetched from Plane; refresh if project workflows change. Last swept 2026-06-01.",
   "MCP": {
     "project_id": "98788c4e-f30f-466d-9562-19e28aa4e53e",
     "namespace": "mcp",
@@ -50,7 +50,7 @@
   },
   "VHS": {
     "project_id": "401bddd2-6d35-48e4-9c4e-e6d4fbec819d",
-    "namespace": "vhs",
+    "namespace": "skills",
     "review_state_id": "c0e933ae-0094-443a-8cdb-9eb4190441e3",
     "states": {
       "Backlog": "0b42a227-5e4c-4345-aa9d-61c05b336395",
@@ -62,6 +62,38 @@
       "PR Review": "c0e933ae-0094-443a-8cdb-9eb4190441e3",
       "Done": "ba79301e-288a-48fa-8e66-4f8d8c66d618",
       "Cancelled": "b54dfa77-bee0-49c0-b413-c862ed63cddc"
+    }
+  },
+  "CLT": {
+    "project_id": "897ad6dc-67c0-465b-8b43-45ddf74b7011",
+    "namespace": "clients",
+    "review_state_id": "df29d743-ab03-4467-8563-6a3845f9ad57",
+    "states": {
+      "Backlog": "adb8fea0-f1fa-4646-9d91-68752da52bf5",
+      "Todo": "5dbdfab9-9125-4ca4-b8b8-fff858fe8ea9",
+      "Ready to Ship": "0c82390e-18e5-4e69-a8eb-922da4e652f3",
+      "In Progress": "038f7179-5718-4ace-8880-7e423bc65e55",
+      "Spec Authoring": "4ac1e53d-6d9c-41d1-9000-97206c8439c2",
+      "Spec Review": "a2ef464f-78e4-4489-9cc3-70856d89bbe1",
+      "In Review": "df29d743-ab03-4467-8563-6a3845f9ad57",
+      "Done": "d9e28e6b-b673-4f99-b98d-83c33eae84eb",
+      "Cancelled": "18ea9a49-436a-4047-9810-3b0c77999b61"
+    }
+  },
+  "PET": {
+    "project_id": "5bff6316-84ea-4103-b9e2-4861ac9c226a",
+    "namespace": "petasos",
+    "review_state_id": "13defdfc-d04d-4c57-8535-db3bf72daf8b",
+    "states": {
+      "Backlog": "b8a46d96-d191-4beb-b251-d15af9a27767",
+      "Todo": "254eedb2-ee21-4205-a3f4-16a93cdda5f7",
+      "Ready to Ship": "05b060f6-feac-4456-8a2e-e5c09312da08",
+      "In Progress": "5a148707-8999-4afe-974d-3cb961a04c0d",
+      "Spec Authoring": "4f413dc4-6ef6-4e54-a3d3-1d4d1c17af55",
+      "Spec Review": "d6682964-e055-4eb9-b6f7-07dc34a20444",
+      "PR Review": "13defdfc-d04d-4c57-8535-db3bf72daf8b",
+      "Done": "1a095d23-7ecd-4b59-923a-41eb3ba42996",
+      "Cancelled": "7f64eb28-5f79-40f5-a340-5ace763a571f"
     }
   }
 }
