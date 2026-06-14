@@ -29,8 +29,14 @@ The skill preserves the read-only-analysis-then-confirmed-mutations split intern
    - **Prefix not found:** Warn: `Project prefix "<project_prefix>" not found in states.json. Skipping Plane state gate — entering partial-close mode.`
    Otherwise capture `project_id`, `namespace`, and the states map.
 5. Parse flags. Apply the mutual-exclusion check above. `--partial` sets `force_partial_close = true`.
+6. Origin sync check (target repo). Reconciliation diffs the spec against **shipped code**, and the archive step moves spec artifacts the merge may have added on `origin`; a local tree behind `origin` cold-reads stale files and can miss merge-added artifacts (e.g., a `test-output.txt` capture committed with the PR). This is an informational **warn only** — never a halt, and never an auto-update: spec-close keeps every mutation behind the Phase 4 checkpoint, so it must not fast-forward the tree here. Catch-all: any git failure inside this step → log `origin: skipped (git error)` and continue.
+   a. **Detect origin remote:** `git remote get-url origin 2>/dev/null`. If exit ≠ 0: log `origin: skipped (no remote)` and continue.
+   b. **Refresh origin refs:** `timeout 30 git fetch origin 2>/dev/null`. Ref update only — never touches the working tree. Network failure is non-fatal: log `origin: fetch failed (proceeding with available refs)` if exit ≠ 0 and continue with whatever `origin/*` refs are already local.
+   c. **Resolve branches:** `git symbolic-ref --short -q HEAD`. Empty output (detached HEAD): log `origin: skipped (detached HEAD)` and continue. Otherwise capture `<branch>`, then bind the comparison branch `<cmp>`: if `git rev-parse --verify -q origin/<branch>` succeeds, `<cmp>` = `<branch>` (counterpart comparison); otherwise fall back to origin's default branch (`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|^refs/remotes/origin/||'`, then `main`, then `master` as literals via `git rev-parse --verify`). If none resolve: log `origin: skipped (no comparison branch)` and continue.
+   d. **Behind count:** `git rev-list --count HEAD..origin/<cmp>`. If 0: log `origin: in-sync` and continue. (A branch *ahead* of `origin/<cmp>` with no incoming commits also counts 0 — in-sync for staleness purposes.)
+   e. **Warn (non-blocking):** print `ORIGIN SYNC: local <branch> is <N> commits behind origin/<cmp> — the reconciliation diff and archive step may read stale or missing files (e.g., artifacts the merge added on origin). Consider 'git merge --ff-only origin/<cmp>' before closing.` Log `origin: behind-N (warned)` and continue. spec-close never updates the tree on the user's behalf.
 
-Print a one-line preflight summary (ticket, flags, states.json status, wiki status), then continue.
+Print a one-line preflight summary (ticket, flags, states.json status, wiki status, origin sync status), then continue.
 
 ## Phase 1 — Mode resolution
 
@@ -196,6 +202,8 @@ Classify applicability:
 If the reconciliation report has no `## Wiki-ready` section (sed produces empty output), treat all categories as applicable and fall through to normal derivation.
 
 Note: `log.md` is not included in the coverage model. The close log entry is a distinct event from the merge log entry that wiki-after-merge writes. Phase 3c always compiles a close log entry, and Phase 5's idempotency guard (`grep -F "close | <PROJECT> — <TICKET-ID>:"`) prevents duplicates while allowing the close entry to coexist with wiki-after-merge's merge entry.
+
+Note: `filemap.md` is intentionally **out of scope** for spec-close. File add/delete/move deltas are `/wiki-after-merge`'s responsibility — spec-close derives close-event wiki entries (comprehension, decisions, state.md, log.md) but never edits the filemap. If this close added or removed files, run `/wiki-after-merge <merge-sha>` from the wiki (or update `filemap.md` by hand) to capture them.
 
 **Stage 2 — Check existing coverage.**
 
@@ -369,7 +377,7 @@ For partial-close, omit the wiki block (or show only the log.md line when it was
 - Read, Grep for code verification, duplicate detection, and evidence extraction. `gh pr view` / `gh pr diff` for PR data.
 - MCP memory server's search capability (e.g., `mcp__claude_ai_Vigil_Harbor_MCP_Server__memory_search` in Claude Code, or the equivalent semantic-search tool in your host) for Plane ticket lookup.
 - plane-proxy's state-list and work-item-lookup capabilities (e.g., `mcp__plane__list_states` and `mcp__plane__retrieve_work_item_by_identifier` in Claude Code, or the equivalents in your host's Plane integration) for the mode gate.
-- Bash for `git log --grep` (read-only), `git show`, `git mv`, `mkdir -p`, `grep -F` (idempotency check), `grep -rlw` / `grep -c` (duplicate detection and fast-path coverage checks), `sed` (Wiki-ready section extraction), `git ls-files --error-unmatch`, `git status`.
+- Bash for `git log --grep` (read-only), `git show`, `git mv`, `mkdir -p`, `grep -F` (idempotency check), `grep -rlw` / `grep -c` (duplicate detection and fast-path coverage checks), `sed` (Wiki-ready section extraction), `git ls-files --error-unmatch`, `git status`, and the Phase 0 origin-sync read-only probes (`git remote get-url`, `git fetch origin` bounded by `timeout`, `git symbolic-ref`, `git rev-parse --verify`, `git rev-list --count`). The origin-sync step never mutates the tree — no `git merge`/`pull`/`checkout`.
 - Write for the reconciliation report, wiki entries, and log.md. Edit for state.md updates (surgical line replacement).
 - **Mutation boundary:** no file mutation before the Phase 4 confirmation except the reconciliation report (generated audit-trail output, Phase 2c). All other writes — wiki entries, state.md, archive moves, log.md — happen in Phase 5, after explicit user approval.
 - This skill never commits. Do not push. Do not open PRs.
