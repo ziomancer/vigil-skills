@@ -253,7 +253,7 @@ To address PR review comments:
 
 After merge, clean up:
   git worktree remove <worktree-path>
-  # Then run /wiki-after-merge <merge-sha> from the wiki dir
+  # Then run /spec-close <spec-path> to reconcile and retire the spec
 ```
 
 Do not auto-update any project wiki — that happens post-merge once the merge SHA exists on `<default-branch>`. Run your project's post-merge wiki/docs update flow if you have one.

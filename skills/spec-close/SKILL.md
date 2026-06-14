@@ -41,7 +41,7 @@ One Plane lookup decides the mode. Rows are evaluated **top-down and the first m
 | 1 | `--report-only` flag | **report-only** — skip the Plane lookup; the report's `> Plane state:` header reads `not checked (--report-only)` unless a memory record supplies it |
 | 2 | `force_partial_close` (from `--partial` or a states.json failure) | **partial-close** — print: `Entering partial-close mode: archiving spec artifacts only, skipping reconciliation and wiki decomposition.` |
 | 3 | Plane lookup succeeds; state group `completed` or `cancelled` | **full-close** |
-| 4 | Plane lookup succeeds; ticket's state UUID absent from the state map, or `state` is null | Prompt — name the unmatched UUID and suggest a states.json refresh: `1. Partial-close  2. Abort` |
+| 4 | Plane lookup succeeds; ticket's state UUID absent from the state map, or `state` is null | Prompt, never infer a group — **missing UUID:** name the unmatched UUID and suggest a states.json refresh; **null state:** report that the ticket has no state UUID and suggest a states.json refresh. Either branch: `1. Partial-close  2. Abort` |
 | 5 | Plane lookup succeeds; any other resolvable group | Print the current state name and group, then the same partial-or-abort prompt ("I invoked this prematurely" exits via Abort) |
 | 6 | Plane unreachable or ticket not found | Warn, then the same partial-or-abort prompt (the safer path) |
 | 7 | Resolved mode would be full-close but `wiki_available` is false | Same partial-or-abort prompt with reason `wiki not found at <path>` — checked after rows 3–6, before any reconciliation work |
