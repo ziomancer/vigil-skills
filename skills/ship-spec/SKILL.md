@@ -1,6 +1,6 @@
 ---
 name: ship-spec
-description: Take a green-lit spec through implementation, test gate, PR, and Plane update. Cuts an isolated git worktree from your default branch (your primary working tree is never touched), implements + tests in a tight loop, captures test output for the PR audit trail, and pushes a PR. Pair with /spec-cycle which produces the spec.
+description: Take a green-lit spec through implementation, test gate, PR, and Plane update. Cuts an isolated git worktree from your default branch (your primary working tree is never touched), implements + tests in a tight loop, captures test output for the PR audit trail, and pushes a PR. Pair with /spec-cycle which produces the spec. After the PR merges, run /spec-close to reconcile and retire the spec.
 user_invocable: true
 ---
 
@@ -253,7 +253,7 @@ To address PR review comments:
 
 After merge, clean up:
   git worktree remove <worktree-path>
-  # Then run /wiki-after-merge <merge-sha> from the wiki dir
+  # Then run /spec-close <spec-path> to reconcile and retire the spec
 ```
 
 Do not auto-update any project wiki — that happens post-merge once the merge SHA exists on `<default-branch>`. Run your project's post-merge wiki/docs update flow if you have one.
