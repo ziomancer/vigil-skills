@@ -1,0 +1,28 @@
+test_bad_skill_fires (__main__.TestLint) ... ok
+test_good_skill_clean (__main__.TestLint) ... ok
+test_lint_paths_empty (__main__.TestLint) ... ok
+test_robustness_error_fixtures (__main__.TestLint) ... ok
+test_robustness_no_error_fixtures (__main__.TestLint) ... ok
+test_shipped_skills_clean (__main__.TestLint) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.003s
+
+OK
+
+=== DEMONSTRATION: lint.py fires on the known-bad fixture (--strict) ===
+lint: 1 error(s), 1 warning(s)
+tests/fixtures/bad-skill/SKILL.md:
+  WARN [missing-requires] line 1: no requires: declaration
+  ERROR [operative-tool-call] line 8: harness-specific tool name as operative instruction: mcp__plane__retrieve_work_item
+strict exit: 1
+
+=== DEMONSTRATION: lint.py warn-only against the 4 shipped skills (default mode) ===
+lint: 0 error(s), 3 warning(s)
+C:\Users\zioni\Documents\Vigil-Harbor\VHS-18-worktree\skills\review-pr\SKILL.md:
+  WARN [missing-requires] line 1: no requires: declaration
+C:\Users\zioni\Documents\Vigil-Harbor\VHS-18-worktree\skills\ship-spec\SKILL.md:
+  WARN [missing-requires] line 1: no requires: declaration
+C:\Users\zioni\Documents\Vigil-Harbor\VHS-18-worktree\skills\spec-close\SKILL.md:
+  WARN [missing-requires] line 1: no requires: declaration
+default exit: 0

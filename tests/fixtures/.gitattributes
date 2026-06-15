@@ -1,0 +1,7 @@
+# These fixtures encode exact bytes (CRLF, BOM, 0-byte, tabs) that the lint's
+# robustness tests depend on. Disable text/EOL normalization so they round-trip
+# unchanged across platforms and checkouts.
+crlf-skill/SKILL.md -text
+bom-skill/SKILL.md -text
+empty.md -text
+tab-indent.md -text

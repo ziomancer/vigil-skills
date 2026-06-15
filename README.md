@@ -46,6 +46,8 @@ These skills delegate project-specific rules (test commands, await guardrails, l
 
 Skills are authored once as Claude Code `SKILL.md` and meant to run on any harness in the fleet. [`docs/portability-contract.md`](docs/portability-contract.md) defines what makes a skill portable — the canonical source format, the portable frontmatter subset, the `requires:` capability declaration, the intent-over-implementation rule, and the behavioral-parity definition. It is the contract every cross-harness item targets.
 
+[`docs/authoring-portable-skills.md`](docs/authoring-portable-skills.md) turns that contract into day-to-day authoring discipline, and `lint.py` mechanically guards it (`python lint.py` warn-only; `python lint.py --strict` to gate). Run it before committing a new or changed skill.
+
 ## Requirements
 
 - **Python 3.8+** for `sync.py` (stdlib only — no pip install).
