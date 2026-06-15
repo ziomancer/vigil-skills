@@ -42,6 +42,10 @@ Flags: `--dry-run`, `--verbose`, `--prune` (install only — deletes files in `~
 
 These skills delegate project-specific rules (test commands, await guardrails, lint conventions) to your project's `CLAUDE.md`. The skills read it during preflight and respect what's there. See [`docs/customizing.md`](docs/customizing.md) for details.
 
+## Cross-harness portability
+
+Skills are authored once as Claude Code `SKILL.md` and meant to run on any harness in the fleet. [`docs/portability-contract.md`](docs/portability-contract.md) defines what makes a skill portable — the canonical source format, the portable frontmatter subset, the `requires:` capability declaration, the intent-over-implementation rule, and the behavioral-parity definition. It is the contract every cross-harness item targets.
+
 ## Requirements
 
 - **Python 3.8+** for `sync.py` (stdlib only — no pip install).
