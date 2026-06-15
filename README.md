@@ -48,6 +48,8 @@ Skills are authored once as Claude Code `SKILL.md` and meant to run on any harne
 
 [`docs/authoring-portable-skills.md`](docs/authoring-portable-skills.md) turns that contract into day-to-day authoring discipline, and `lint.py` mechanically guards it (`python lint.py` warn-only; `python lint.py --strict` to gate). Run it before committing a new or changed skill.
 
+The engine that emits these canonical `SKILL.md` sources as per-harness packages is owned and kept in a separate repo — [`vigil-converter`](https://github.com/ziomancer/vigil-converter) (Bun/TypeScript, deliberately outside this stdlib-only tree). It is the converter every per-harness adapter builds on (VHS-19).
+
 ## Requirements
 
 - **Python 3.8+** for `sync.py` (stdlib only — no pip install).
