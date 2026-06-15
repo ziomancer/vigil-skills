@@ -2,6 +2,12 @@
 name: spec-cycle
 description: Author a spec from a brief, then run a 3-lens parallel review loop (correctness / edge-cases / conventions) until findings are clean or 4 passes complete. Halts at a session-boundary HARD STOP with a structural drift-check checklist before any implementation. Pair with /ship-spec to take an approved spec through implementation, PR, and Plane update, then /spec-close after the PR merges.
 user_invocable: true
+requires:
+  shell: true
+  filesystem: [read, write]
+  network: true
+  subagents: true
+  services: [issue-tracker?, shared-memory?]
 ---
 
 # /spec-cycle — author and converge a spec
