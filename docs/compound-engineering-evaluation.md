@@ -104,7 +104,7 @@ Adopting CE wholesale would *cost* you the following, all of which CE has no con
 *Tier 3 — watch, don't lift yet:*
 - `ce-ideate` / `ce-brainstorm` upstream ideation — you author briefs deliberately; lower priority.
 - A `ce-debug`-style structured root-cause workflow for the `ship-spec` test-gate halt case.
-- The multi-harness converter CLI — notable only because your MCP server already serves OpenClaw/Calvin; revisit if cross-harness skill parity ever becomes a goal.
+- The multi-harness converter CLI — notable only because we already run our own non-Claude harnesses; revisit if cross-harness skill parity ever becomes a goal.
 
 *Reject:* installing the plugin; the language-specific reviewers (Rails/DHH/Swift); and the Slack/Figma/Proof/imagegen/Xcode/demo-reel long tail.
 
