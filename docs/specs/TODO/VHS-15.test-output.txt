@@ -1,0 +1,10 @@
+lint: 0 error(s), 4 warning(s)
+agents/spec-reviewer-conventions.md:
+  WARN [missing-requires] line 1: no requires: declaration
+agents/spec-reviewer-correctness.md:
+  WARN [missing-requires] line 1: no requires: declaration
+agents/spec-reviewer-edge-cases.md:
+  WARN [missing-requires] line 1: no requires: declaration
+agents/spec-reviewer-scalability.md:
+  WARN [missing-requires] line 1: no requires: declaration
+exit=0
