@@ -22,7 +22,7 @@ Flags: `--dry-run`, `--verbose`, `--prune` (install only), `--claude-dir <path>`
 
 Three skills form the spec lifecycle. The authoring/impl pair runs in separate sessions to avoid token-cap pressure; the post-merge close runs after code ships:
 
-1. **`/spec-cycle <brief-path>`** — Authors a spec from a brief, then runs a 3-lens parallel review loop (up to 4 rounds). Halts at a session boundary with a drift-check checklist. Does not implement or commit anything.
+1. **`/spec-cycle <brief-path>`** — Authors a spec from a brief, then runs a parallel review loop — three default lenses plus an optional fourth scalability lens — up to 4 rounds. Halts at a session boundary with a drift-check checklist. Does not implement or commit anything.
 
 2. **`/ship-spec <spec-path>`** — Takes the green-lit spec through implementation in an isolated git worktree, test gate (up to 5 iterations), commit, PR via `gh`, and Plane ticket state update. The user's primary working tree is never touched.
 
@@ -30,13 +30,14 @@ Three skills form the spec lifecycle. The authoring/impl pair runs in separate s
 
 ### Parallel review agents
 
-`spec-cycle` dispatches three read-only subagents **in parallel** (single message, three Agent calls):
+`spec-cycle` dispatches read-only reviewer subagents **in parallel** (single message — three by default, plus an optional fourth when the brief declares scale):
 
 | Agent | Lens | Key concern |
 |-------|------|-------------|
 | `spec-reviewer-correctness` | Does it solve the brief? | Nonexistent references, unmet acceptance criteria, internal contradictions |
 | `spec-reviewer-edge-cases` | What breaks it? | Empty inputs, concurrency, external-system failures, observability gaps |
 | `spec-reviewer-conventions` | Does it follow the repo? | AGENTS.md / CLAUDE.md rules, wiki decisions, premature abstractions, duplicate code |
+| `spec-reviewer-scalability` | Does it hold at N×? *(optional — dispatched only when the brief declares scale)* | Batching, algorithmic complexity, unbounded accumulation, per-instance state collision, uncapped fan-out, cost/token budget |
 
 Each agent emits a `STATUS: GREEN` or `STATUS: RED P0=<n> P1=<n> ...` last line. The orchestrator parses this to gate the loop.
 
@@ -63,11 +64,12 @@ Standalone skill for triaging CodeRabbit review comments. Reads findings, verifi
 
 ## Conventions
 
-- Skills and agents use YAML frontmatter (`name`, `description`, `user_invocable`).
+- Skills use `name`, `description`, `user_invocable`; agents use `name`, `description`.
 - Reviewer agents are **read-only** — they must never edit files or mutate git state.
-- Severity scale is shared across all three reviewers: P0/P1 block shipping; P2+ do not. Reserve P0/P1 for genuinely load-bearing issues.
+- Severity scale is shared across all reviewers (the three default lenses plus the optional scalability lens): P0/P1 block shipping; P2+ do not. Reserve P0/P1 for genuinely load-bearing issues.
 - `sync.py` mirrors only the `skills/` and `agents/` subtrees (defined in `SUBTREES`). Adding a new top-level subtree requires updating that tuple.
 - Specs, briefs, and reviews live in the **target project** at `docs/specs/TODO/<TICKET-ID>.*`, not in this repo.
+- A brief may carry an optional `## Scale` section to turn on the scalability reviewer: `**Factor:** yes` plus a `**Target:**` line (the target N the design must hold at — requests/sec, records, tenants, $/op, etc.) enables the lens; `**Factor:** no` (or `none` / `n/a`) records scale as an explicit non-factor. Absent the section, the lens stays off and the loop runs the three default lenses unchanged. See `docs/spec-workflow-reference.md` § "Optional scalability lens" for the full grammar.
 - `CLAUDE.md` is gitignored (it holds machine-local absolute paths). Anything that must ship in a PR — including "referenced from project guidance" pointers — belongs in a **tracked** file (`AGENTS.md`, `README.md`, or `docs/`), not `CLAUDE.md`.
 
 ## Post-merge wiki update

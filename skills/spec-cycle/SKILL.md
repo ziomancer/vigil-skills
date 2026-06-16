@@ -1,6 +1,6 @@
 ---
 name: spec-cycle
-description: Author a spec from a brief, then run a 3-lens parallel review loop (correctness / edge-cases / conventions) until findings are clean or 4 passes complete. Halts at a session-boundary HARD STOP with a structural drift-check checklist before any implementation. Pair with /ship-spec to take an approved spec through implementation, PR, and Plane update, then /spec-close after the PR merges.
+description: Author a spec from a brief, then run a parallel review loop (three default lenses — correctness / edge-cases / conventions — plus an optional fourth scalability lens when the brief declares scale a factor) until findings are clean or 4 passes complete. Halts at a session-boundary HARD STOP with a structural drift-check checklist before any implementation. Pair with /ship-spec to take an approved spec through implementation, PR, and Plane update, then /spec-close after the PR merges.
 user_invocable: true
 requires:
   shell: true
@@ -14,7 +14,7 @@ requires:
 
 Invoked as: `/spec-cycle <brief-path>` (e.g., `/spec-cycle docs/specs/TODO/PROJ-123.brief.md`).
 
-This skill does two things: author a v1 spec from a brief, then loop a 3-lens parallel review until the spec is clean or 4 passes complete. It does **not** implement anything. It halts at a session boundary so the user can review the spec on disk and invoke `/ship-spec` separately.
+This skill does two things: author a v1 spec from a brief, then loop a parallel review (three default lenses, plus an optional fourth when the brief declares scale) until the spec is clean or 4 passes complete. It does **not** implement anything. It halts at a session boundary so the user can review the spec on disk and invoke `/ship-spec` separately.
 
 ## Why split from /ship-spec
 
@@ -234,7 +234,62 @@ Before anything else:
 6. Confirm plane-proxy is reachable: call the plane-proxy's project-list capability (e.g., `mcp__plane__list_projects` in Claude Code, or the equivalent in your host's Plane integration). On failure, **warn and proceed** — the brief is the local source of truth.
 7. Read `~/.claude/skills/ship-spec/states.json` (`~/.claude/` on Unix; `%USERPROFILE%\.claude\` on Windows) (installed by `sync.py`). If the file is not found, default `namespace` to `"plane"` and warn — ticket lookup still works (MCP-33 fallback namespace is `"plane"` for unmapped projects); namespace-scoped precision is degraded but not broken. If the file exists but cannot be parsed (invalid JSON or unexpected shape), warn and default `namespace` to `"plane"`. Otherwise, extract the ticket prefix (the portion before the first hyphen in `ticket_id`, e.g., `"PROJ"` from `"PROJ-123"`) and look up that prefix in `states.json` to get the `namespace`. If the prefix is not in `states.json`, default `namespace` to `"plane"` and warn. Pass `namespace` to Phase 1's own `memory_search` call and to each reviewer agent in step 2b.
 
-Print a one-line preflight summary — including the upstream check result token (clean / skipped / N stale — user proceeded) and the origin check result token (in-sync / behind-N (updated) / behind-N (user proceeded) / behind-N (update failed — proceeded) / behind-N (diverged — proceeded) / behind-N (informational — no counterpart) / skipped (<reason>)) — then continue.
+8. **Scale-lens detection.** Parse the brief located in step 1 for an optional
+   `## Scale` declaration that turns on the fourth (scalability) reviewer.
+   Resolve `scale_lens ∈ {on, non-factor, off}`, `scale_target`, and
+   `scale_dimensions` **once**, here, and hold them constant for the entire
+   invocation (so the per-round reviewer set is consistent across the loop).
+
+   Deterministic detection:
+   1. **Section heading.** The first brief line matching
+      `^#{1,6}\s+scal(e|ing)\s*$` (case-insensitive, whole-word — `## Scale`
+      and `## Scaling` match; `## Scaling considerations` / `## Scale-out plan`
+      do **not**, so an unrelated prose heading never becomes a false toggle).
+      The section body runs to the next `^#{1,6}\s` heading or EOF. No match →
+      `scale_lens = off` (default; silent). **Near-miss tripwire:** if no
+      whole-word heading matched but some heading line matches the looser
+      `^#{1,6}\s+scal(e|ing)\b` *and* its body carries a `**Factor:**` line,
+      warn `scale-lens: off (heading "<text>" not recognized — use a bare
+      "## Scale"/"## Scaling" heading to enable)` rather than staying silent
+      (the lens still stays off, preserving the false-toggle protection). If
+      more than one whole-word heading matches, the **first** is authoritative;
+      the rest are ignored with a warning (`scale-lens: multiple Scale sections
+      — using first`).
+   2. **Factor.** Within the section, the first line matching
+      `\*\*Factor:\*\*\s*(\S+)`; lowercase the captured token:
+      - `yes` / `on` / `true` → candidate **on** (requires a target, below).
+      - `no` / `off` / `none` / `non-factor` / `n/a` → `scale_lens = non-factor`
+        (recorded; the lens does **not** run).
+      - anything else, or no `**Factor:**` line → `scale_lens = off`, warn
+        `scale-lens: off (malformed declaration)`.
+   3. **Target** (only when Factor is on). The first line matching
+      `\*\*Target(?:\s*N)?:\*\*\s*(.+\S)` → `scale_target`. Present and
+      non-empty → `scale_lens = on`. Absent/empty → `scale_lens = off`, warn
+      `scale-lens: off (factor=yes but no target — add a Target to enable)`
+      (a declared-on lens with no target cannot score P0/P1, so an incomplete
+      declaration must not silently enable it — declare-don't-infer).
+   4. **Dimensions** (optional). `\*\*Dimensions:\*\*\s*(.+\S)` →
+      `scale_dimensions` (free text; may be empty).
+
+   `scale_target` and `scale_dimensions` are captured as opaque single-line
+   text (each regex stops at end-of-line, so neither carries a newline). They
+   are rendered as-is into the Phase 3 drift-check checklist and the
+   scalability reviewer's prompt; the surface is plain text (not a markdown
+   table or persisted structured record), so no escaping is required.
+
+   **Re-run pin (cross-invocation).** If `docs/specs/TODO/<TICKET-ID>.spec.md`
+   already exists and carries a recorded scale Decision (written by Phase 1),
+   that recorded decision — as it exists at preflight — is authoritative; if
+   the brief's `## Scale` now disagrees, warn (`scale-lens: brief disagrees
+   with recorded spec Decision — using recorded; align the brief's ## Scale
+   with the recorded Decision, or edit/remove the Decision, to clear`) rather
+   than silently flipping mid-tree. To intentionally turn the lens off after a
+   prior on-run, edit or remove the recorded scale Decision in the spec (or
+   delete the spec to force a clean Phase-1 re-author from the now-off brief).
+   Precedence: recorded Decision present → pin to it; absent → the brief
+   governs.
+
+Print a one-line preflight summary — including the upstream check result token (clean / skipped / N stale — user proceeded), the origin check result token (in-sync / behind-N (updated) / behind-N (user proceeded) / behind-N (update failed — proceeded) / behind-N (diverged — proceeded) / behind-N (informational — no counterpart) / skipped (<reason>)), and the scale-lens token (on (target: <…>) / non-factor (recorded) / off / off (no target) / off (malformed declaration) / off (heading not recognized) / multiple Scale sections — using first) — then continue.
 
 ## Phase 1 — Author v1 spec
 
@@ -255,6 +310,8 @@ If the brief identifies decisions ("rename, don't preserve"; "debuggable tripwir
 
 Do not include implementation prescriptions in the spec that the brief deliberately left to the spec author — but do make those decisions explicit (e.g., "single source of truth: extract into shared module — rationale: eliminates drift; refactor cost is one file").
 
+**Scale declaration (from Phase 0 step 8).** When `scale_lens ∈ {on, non-factor}`, record the scale declaration in the spec as a carried-forward **Decision** — the target N when `on`, or the explicit non-factor note otherwise — so Phase 3's drift-check has a spec anchor to verify against. No change when `scale_lens == off`.
+
 Save and continue.
 
 ## Phase 2 — Review loop (≤4 passes)
@@ -265,15 +322,23 @@ For each round 1..4:
 
 Read `<TICKET-ID>.spec.md` from disk fresh. Do not rely on what you wrote — the file is the source of truth.
 
-### 2b. Dispatch 3 reviewers in parallel
+### 2b. Dispatch the reviewers in parallel
 
-Single message, three Agent tool calls — they must run in parallel, not sequentially:
+Single message, the reviewer Agent tool calls (three, or four when scale is declared) — they must run in parallel, not sequentially. The three standing lenses are always dispatched:
 
 ```
 Agent(subagent_type="spec-reviewer-correctness", prompt=<context>)
 Agent(subagent_type="spec-reviewer-edge-cases",  prompt=<context>)
 Agent(subagent_type="spec-reviewer-conventions", prompt=<context>)
 ```
+
+**Iff `scale_lens == on`** (resolved in Phase 0 step 8), append a fourth call to the **same** single message:
+
+```
+Agent(subagent_type="spec-reviewer-scalability", prompt=<context>)
+```
+
+When `scale_lens != on`, no fourth `Agent` call is emitted — the only difference from the default dispatch is the inert `scale_lens: off` param on the three standing prompts (a behavioral no-op).
 
 Each agent's prompt must include:
 - `spec_path: docs/specs/TODO/<TICKET-ID>.spec.md`
@@ -282,10 +347,15 @@ Each agent's prompt must include:
 - `ticket_id: <TICKET-ID>`
 - `namespace: <resolved from preflight step 7, default "plane">`
 - `round_number: <N>`
+- `scale_lens: <on|off>` — the dispatch-time collapse of Phase 0 step 8's three-valued resolution (`on` stays `on`; both `non-factor` and `off` map to the reviewer-facing `off`). Passed to **every** dispatched reviewer. The three standing lenses use it solely to decide whether to read a prior-round `scalability.md` during closure tracking; the scalability reviewer always receives `on`.
 
 For the conventions reviewer additionally:
 - `wiki_root: <absolute path to wiki, resolved in preflight>` (omit if no wiki configured)
 - `project_slug: <e.g., myproject>`
+
+For the scalability reviewer additionally (only dispatched when `scale_lens == on`):
+- `scale_target: <from Phase 0 step 8>`
+- `scale_dimensions: <from Phase 0 step 8>`
 
 For rounds N > 1, each agent's prompt must additionally include a
 closure-manifest block — the author's stated disposition of every
@@ -312,6 +382,11 @@ from the prior-round report, then a concise disposition phrase — e.g.,
 § <Decision n>`, or `not applicable: <one-line reason>` — always with a
 spec § anchor the reviewer can verify.
 
+When the scalability lens ran, its P0/P1 dispositions (and any synthetic
+missing-STATUS P0) appear in this manifest exactly like any other lens — the
+manifest is built from every round-(N−1) P0/P1 finding, not from a fixed
+per-lens file list, so no construction change is needed for the fourth lens.
+
 ### 2c. Persist findings
 
 Save each agent's full report to:
@@ -321,14 +396,28 @@ docs/specs/TODO/<TICKET-ID>.reviews/round-<N>/edge-cases.md
 docs/specs/TODO/<TICKET-ID>.reviews/round-<N>/conventions.md
 ```
 
+When the scalability reviewer was dispatched (`scale_lens == on`), also save:
+```
+docs/specs/TODO/<TICKET-ID>.reviews/round-<N>/scalability.md
+```
+
+If the scalability reviewer was dispatched but returned **no parseable report
+at all** (subagent crash, timeout, empty return), write a **stub**
+`scalability.md` recording the dispatch failure — a one-line body plus
+`STATUS: RED P0=1 P1=0` — so the gate has a summand and round-(N+1) closure
+tracking has an anchor. (This mirrors the missing/malformed-STATUS handling:
+the gate cannot go green on a vanished reviewer.)
+
 ### 2d. Parse STATUS lines and gate
 
 Each reviewer's last non-blank line is `STATUS: GREEN` or `STATUS: RED P0=<n> P1=<n> ...`.
 
-Compute:
+Compute, summing across **all dispatched reviewers** (the three standing lenses, or four when the scalability lens is on):
 ```
 total_p0p1 = sum of P0+P1 from RED status lines (GREEN contributes 0)
 ```
+
+The gate **formula is unchanged** — only the count of summands varies, and only when scale is on. With the lens off there is no fourth summand and the arithmetic is identical to today.
 
 If `total_p0p1 == 0`: break the loop. Spec is green at round N. Run the post-green polish step (2g) before Phase 3.
 
@@ -355,8 +444,9 @@ If still red and `round == 4`:
   sections. If a REWRITE forces a FROZEN-section edit (e.g., changed function
   signature must propagate), explicitly promote that section to REWRITE first.
 - Build a closed-issues manifest from rounds 1–3 and pass it to the rewrite
-  phase as regression constraints. Construct it by scanning each round's three
-  reviewer reports (`correctness.md`, `edge-cases.md`, `conventions.md`) and
+  phase as regression constraints. Construct it by scanning every reviewer
+  report present in each round's directory (`correctness.md`, `edge-cases.md`,
+  `conventions.md`, plus `scalability.md` when the scaling lens ran) and
   collecting every finding whose status resolved to CLOSED in a later round's
   closure table. Each entry has the shape:
   ```
@@ -450,10 +540,19 @@ Out-of-scope fences:
   [ ] 1. <fence from brief> — any spec section violates it?
   [ ] 2. ...
 
+[ render only when scale_lens == on (Phase 0 step 8): ]
+Scale declaration:
+  [ ] Target N: <scale_target> — addressed by the spec's design? (yes/no/note)
+[ render only when scale_lens == non-factor: ]
+Scale: explicitly marked a non-factor in the brief — confirm the spec adds no scale machinery.
+[ when scale_lens == off, render neither — output is unchanged ]
+
 === NEXT ===
 When ready, run:
   /ship-spec docs/specs/TODO/<TICKET-ID>.spec.md
 ```
+
+The Scale-declaration block consumes the `scale_lens` / `scale_target` already resolved in Phase 0 step 8 — **no re-parse of the brief.** The "Brief-section parsing rules" below are **not** extended to re-read `## Scale`; the drift-check renders the already-carried value, keeping a single source of truth for the parse (step 8).
 
 ### Brief-section parsing rules
 
@@ -472,7 +571,7 @@ After printing the checklist, **do not auto-proceed**. The user invokes `/ship-s
 
 - Read, Edit, Write for spec authorship and revision.
 - Bash for `git fetch upstream` / `git fetch origin` (ref updates only, bounded by timeout), `git log` / `git remote` / `git rev-list` / `git rev-parse` / `git symbolic-ref` / `git merge-base --is-ancestor` / `sed` (read-only), `mkdir` for review subdirs, and — the lone git-level mutation of existing tracked files in this skill — `git merge --ff-only origin/<branch>`, run only after explicit user confirmation in Phase 0 step 5e.
-- Agent calls (parallel) for the three reviewers.
+- Agent calls (parallel) for the reviewers (three, or four when scale is declared).
 - MCP memory server's search capability (e.g., `mcp__claude_ai_Vigil_Harbor_MCP_Server__memory_search` in Claude Code, or the equivalent semantic-search tool in your host) for Plane ticket lookup (tags: [plane_work_item, <TICKET-ID>], namespace from states.json). Falls back to brief alone on zero results or error response.
 - Do not commit. Do not push. Do not open PRs. That's `/ship-spec`'s job.
 
@@ -496,3 +595,26 @@ After printing the checklist, **do not auto-proceed**. The user invokes `/ship-s
   printing git's error. In both cases reviewers may still produce
   stale-tree false positives; the warning names the cause, which is the
   bulk of the value.
+- **Malformed or target-less scale declaration.** A `## Scale` section with
+  no parseable `**Factor:**`, or `**Factor:** yes` with no `**Target:**`, does
+  **not** enable the lens — Phase 0 step 8 warns (`scale-lens: off (malformed
+  declaration)` / `(no target)`) and the unchanged standing lenses run.
+  Declare-don't-infer: an incomplete declaration never silently activates the
+  fourth lens.
+- **Scalability reviewer status drift / dispatched-but-absent.** A missing or
+  unparseable `STATUS:` line from the scalability reviewer is handled by the
+  existing reviewer-status-drift rule above (synthetic `STATUS: RED P0=1
+  P1=0`); a dispatched reviewer that returns no report at all is treated
+  identically and persisted as a stub `scalability.md` (step 2c). Either way
+  the gate gets a blocking summand instead of silently dropping a scale
+  concern — it cannot go green on a vanished reviewer.
+- **Scale toggled between runs (stale `scalability.md`).** `scale_lens` is
+  resolved once in Phase 0 and held constant for the whole invocation, so
+  within a converging run the per-round report set is consistent. Across
+  separate invocations sharing a reviews tree, Phase 0 step 8 pins to the
+  spec's recorded scale Decision (Phase 1 wrote it) and warns if the brief now
+  disagrees, rather than silently flipping. As a backstop, every reviewer
+  receives `scale_lens`, and the generalized closure read ignores any
+  `scalability.md` in `round-<N-1>/` when `scale_lens == off` — so a stale
+  report from a prior on-run can never inject a phantom finding into an
+  off-run's gate.

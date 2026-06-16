@@ -6,17 +6,18 @@ Cross-machine skills and subagents for Claude Code. A Plane.so-aware spec → re
 
 ### Skills
 
-- **`/spec-cycle <brief-path>`** — Author a spec from a brief, then run a 3-lens parallel review loop (correctness / edge-cases / repo-conventions) until findings clean or 4 passes complete. Halts at a session boundary with a structural drift-check checklist before any implementation. Pair with `/ship-spec`.
+- **`/spec-cycle <brief-path>`** — Author a spec from a brief, then run a parallel review loop (correctness / edge-cases / repo-conventions, plus an optional scalability lens) until findings clean or 4 passes complete. Halts at a session boundary with a structural drift-check checklist before any implementation. Pair with `/ship-spec`.
 - **`/ship-spec <spec-path>`** — Take a green-lit spec through implementation, test gate, PR, and Plane update. Cuts an isolated git worktree from your default branch (your primary working tree is never touched), implements + tests in a tight loop, captures test output for the PR audit trail, and pushes a PR.
 - **`/review-pr [<num>]`** — Process one round of CodeRabbit review findings on a GitHub PR. Triages by severity, fixes real issues, pushes, resolves threads, and verifies the resolve actually took.
 
 ### Subagents
 
-The `spec-cycle` skill dispatches three reviewers in parallel:
+The `spec-cycle` skill dispatches its reviewers in parallel — three by default, plus an optional fourth when the brief declares scale:
 
 - **`spec-reviewer-correctness`** — Does the spec actually solve the brief's problem? Verifies every claim about current code by reading the actual files.
 - **`spec-reviewer-edge-cases`** — Empty/null/zero-length inputs, concurrency, external-system failures, runtime preconditions, observability/tripwire requirements.
 - **`spec-reviewer-conventions`** — Repo conventions (CLAUDE.md), prior decisions (your wiki, if any), premature abstractions, reuse vs. duplicate, unneeded backwards-compat.
+- **`spec-reviewer-scalability`** *(optional — only when the brief declares scale a factor)* — Does the design hold at the brief's declared target N? Batching, algorithmic complexity, unbounded accumulation, per-instance state collision, uncapped fan-out, cost/latency/token budget.
 
 ## Install
 

@@ -17,6 +17,7 @@ The orchestrator passes these in your prompt:
 - `project_slug` — the project subdir under `<wiki_root>/projects/` (e.g., `myproject`, `my-service`). Only meaningful if `wiki_root` is set.
 - `round_number` — which review pass this is (1–4)
 - `closure_manifest` — author-stated disposition of each round-(N−1) P0/P1 finding (present only when `round_number` ≥ 2); verify these claims against the spec in step 7
+- `scale_lens` — whether the optional scalability lens ran this round (`on` / `off`). Used only for closure tracking in step 7: when `off`, ignore any stale `scalability.md` left in the prior-round directory by an earlier on-run.
 
 Execute these steps in order. Do not skip:
 
@@ -30,11 +31,14 @@ Execute these steps in order. Do not skip:
 5. **Grep the codebase for the conventions the spec is about to follow or break.** If the spec proposes a registry, grep for similar registries. If it proposes a new error-handling pattern, find the existing pattern.
 6. **Read the brief at `brief_path`** for context on intent.
 
-7. **If `round_number ≥ 2`**, read the prior-round review files from disk:
-   - `<project_root>/docs/specs/TODO/<TICKET-ID>.reviews/round-<N-1>/correctness.md`
-   - `<project_root>/docs/specs/TODO/<TICKET-ID>.reviews/round-<N-1>/edge-cases.md`
-   - `<project_root>/docs/specs/TODO/<TICKET-ID>.reviews/round-<N-1>/conventions.md`
-   For every finding in the prior round (yours and the other two lenses'),
+7. **If `round_number ≥ 2`**, read every reviewer report present in
+   `<project_root>/docs/specs/TODO/<TICKET-ID>.reviews/round-<N-1>/` — the
+   three standing lenses (`correctness.md`, `edge-cases.md`,
+   `conventions.md`) plus `scalability.md` when the scaling lens ran this
+   round. **Stale-report guard:** when `scale_lens == off`, ignore any
+   `scalability.md` in that directory — it is stale from a prior on-run and
+   its findings are out of scope for this run's gate.
+   For every finding in the prior round (yours and the other lenses'),
    verify against the current spec whether it is CLOSED, PARTIAL, REOPENED,
    or NEW (a new variant of the same root). Render a closure table as the
    first section of your output, before any new findings:
