@@ -1,0 +1,129 @@
+VHS-20 — Hermes target adapter — acceptance trail
+==================================================
+
+Implementation repo: ziomancer/vigil-converter  (cross-repo per Decision D1)
+Branch:               feat/vhs-20-hermes-adapter  (worktree off origin/main @ 14cdca4f)
+Captured:             2026-06-15
+
+This spec ships engine code in vigil-converter; the vigil-skills footprint is
+this spec record only (Decision D1). The blocking gate is the Tier-1 CI smoke
+run below; Tier-2 is captured live-load evidence.
+
+
+TIER 1 — CI smoke path (automated, blocking)
+--------------------------------------------
+Command (from the vigil-converter repo root):
+
+    bun run scripts/smoke-test.ts
+
+Result: PASS (exit 0)
+
+    [a] Ingesting sample skills root: .../VHS-20-worktree/samples/skills
+    [a] OK — parsed 2 skill(s): capability-demo, hello-world
+    [b] Converting sample -> opencode (output: .../vigil-smoke-opencode-xAw1p6)
+    [b] OK — opencode exited 0 and emitted 4 non-empty file(s)
+    [b] OK — opencode.json is valid JSON; emitted 2 skill package(s) matching parsed count: capability-demo, hello-world
+    [c] Converting sample -> hermes (home: .../vigil-smoke-hermes-7iQLOa)
+    [c] OK — 2 Hermes package(s) emitted
+    [c] OK — hello-world ungated (no gating keys, no pre-flight)
+    [c] OK — capability-demo: full mapping + env-var shape + pre-flight + verbatim description
+    [c] OK — optional shared-memory ungated (advisory-only)
+    [c] OK — robust to unrecognized key + out-of-vocab service (ungated, no abort)
+    ✓ SMOKE TEST PASSED — ingestion (2 skills) + opencode conversion + hermes target green
+
+Tier-1 assertions exercised (Test plan §Tier 1):
+  1. Package shape — every parsed sample skill emits a non-empty <home>/skills/<name>/SKILL.md.
+  2. No-`requires` case (hello-world) — name+description, no gating keys, no pre-flight sentinel.
+  3. Full-mapping case (capability-demo) — requires_toolsets:[terminal] from shell; required
+     service issue-tracker gated in requires_tools AND has a top-level
+     required_environment_variables entry (asserted structurally: {name,prompt,help,required_for},
+     not by exact var name); pre-flight sentinel present; required enumeration names
+     terminal/shell, network, subagents, filesystem, issue-tracker.
+  4. Optional service NOT gated — shared-memory? appears in no requires_*/fallback_* key; advisory only.
+  5. description preserved verbatim (by value; colon-bearing fixture exercises the dump reflow path).
+  6. Nested block well-formed — metadata.hermes is a real mapping, not "[object Object]" (guards D7 dump).
+  7. Robustness — well-formed unrecognized key (legacy `tools:`) + out-of-vocab service token
+     (`nonexistent-role`) do not abort; emit ungated-with-warning.
+  8. Temp-dir hygiene — Hermes temp homes created with mkdtemp, removed in finally.
+
+The inherited OpenCode/Codex assertions stay green unchanged; the Hermes path is additive.
+
+
+TIER 2 — Live install/load proof (manual, captured)  [Done-when 2]
+------------------------------------------------------------------
+A live Hermes was reachable at ship time (HERMES_HOME set, `hermes` CLI on PATH).
+
+Step 1 — convert the four canonical vigil skills into a temp Hermes home:
+
+    bun run src/index.ts convert <vigil-skills>/skills --to hermes --hermes-home <TMP>
+    -> exit 0; emitted:
+       <TMP>/skills/review-pr/SKILL.md
+       <TMP>/skills/ship-spec/SKILL.md
+       <TMP>/skills/spec-close/SKILL.md
+       <TMP>/skills/spec-cycle/SKILL.md
+
+Step 2 — load under the live Hermes (HERMES_HOME=<TMP> hermes skills list):
+
+                      Installed Skills
+    ┌────────────┬──────────┬────────┬───────┬─────────┐
+    │ Name       │ Category │ Source │ Trust │ Status  │
+    ├────────────┼──────────┼────────┼───────┼─────────┤
+    │ review-pr  │          │ local  │ local │ enabled │
+    │ ship-spec  │          │ local  │ local │ enabled │
+    │ spec-close │          │ local  │ local │ enabled │
+    │ spec-cycle │          │ local  │ local │ enabled │
+    └────────────┴──────────┴────────┴───────┴─────────┘
+    0 hub-installed, 0 builtin, 4 local — 4 enabled, 0 disabled
+    -> exit 0
+
+  - All four emitted packages appear in `skills_list` as enabled local skills (install + load liveness).
+  - Hermes parsed each emitted frontmatter without error — validating the nested metadata.hermes
+    block AND the top-level required_environment_variables shape against the live loader.
+  - Per Hermes's rule ("every installed skill becomes a slash command automatically"), the four
+    listed/enabled skills resolve as slash commands.
+
+spec-cycle (the only skill with a `requires:` block — the contract worked reference) emitted with
+the generated pre-flight preamble (both services are optional, so they are advisory; the required
+booleans drive the gate):
+
+    ---
+    name: spec-cycle
+    description: Author a spec from a brief, then run a 3-lens parallel review loop ...
+    metadata:
+      hermes:
+        requires_toolsets:
+          - terminal
+    ---
+
+    <!-- vigil-converter:hermes-preflight v1 -->
+    ## Capability pre-flight (generated by the Hermes adapter — do not edit)
+
+    Before any action that mutates state, confirm each REQUIRED capability below is
+    available. If any is unavailable, halt immediately and report which one — do not
+    proceed. OPTIONAL capabilities: if unavailable, warn and continue.
+
+    Required: shell (terminal toolset), network, subagents, filesystem [read, write]
+    Optional (warn-and-proceed): service:issue-tracker, service:shared-memory
+
+    # /spec-cycle — author and converge a spec
+    ... (author body verbatim) ...
+
+Not captured non-interactively: the interactive `skill_view` render and a full `hermes chat`
+round-trip require provider auth; `hermes skills inspect` is interactive/network-bound (timed out).
+The listed + cleanly-parsed state above is the captured install/load proof; it was not faked.
+
+
+D9 RE-VERIFY against the live harness (2026-06-15) — see HERMES-MAPPING.md drift log
+------------------------------------------------------------------------------------
+  - RESOLVED: `required_environment_variables` is TOP-LEVEL frontmatter, NOT nested under
+    metadata.hermes. Confirmed by the official authoring doc
+    (website/docs/developer-guide/creating-skills.md) and real bundled skills (shopify, siyuan).
+    The 2026-05-23 wiki snapshot was ambiguous (brief's provisional default was nested). The
+    emitter was corrected to top-level per D9. (Tier-1 cannot distinguish placement; the live
+    harness can — this is exactly why D9 required the re-verify.)
+  - CONFIRMED: toolset names terminal / memory / delegation; nested metadata.hermes.* keys
+    (requires_toolsets/requires_tools/fallback_*/tags/category/config).
+  - CONFIRMED: no native skill-load pre-flight/validation hook in the Hermes skills CLI — the
+    generated preamble is the gate (advisory-by-construction, documented gap G3).
+  - CONFIRMED: <HERMES_HOME>/skills/ is the single source of truth (per-profile via HERMES_HOME);
+    the writer is non-destructive of user content accordingly.
