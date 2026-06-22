@@ -95,5 +95,20 @@
       "Done": "1a095d23-7ecd-4b59-923a-41eb3ba42996",
       "Cancelled": "7f64eb28-5f79-40f5-a340-5ace763a571f"
     }
+  },
+  "SER": {
+    "project_id": "8bdfa36f-5f16-4eaa-85d9-31c2c12cbf8e",
+    "namespace": "serenade",
+    "review_state_id": "371068bc-a594-4045-ad4d-cf86b150b5d0",
+    "states": {
+      "Backlog": "90e738b4-e70e-4f1d-9d07-b9c2ec6c337b",
+      "Todo": "ba0c9374-f316-47d8-ade4-3c0151afb6b1",
+      "Ready to Ship": "469e7b20-7e07-4489-944d-b47af3786b0b",
+      "In Progress": "b6ce5d30-61d4-42d6-84ab-f51b959adfec",
+      "Spec Authoring": "dea22d66-e03a-44ef-af28-6a2d89a41805",
+      "In Review": "371068bc-a594-4045-ad4d-cf86b150b5d0",
+      "Done": "61cc0872-caed-4d75-b6af-250a016ba2a1",
+      "Cancelled": "7e5693f9-26af-4a93-aafd-a30f096cdd44"
+    }
   }
 }
