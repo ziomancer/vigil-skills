@@ -20,6 +20,7 @@ from typing import Any
 
 _COMPARATORS = frozenset({"gt", "gte", "lt", "lte", "eq", "ne", "present", "absent"})
 _NUMERIC_COMPARATORS = frozenset({"gt", "gte", "lt", "lte", "eq", "ne"})
+_WATCH_ID_RE = re.compile(r"^[0-9a-f]{16}$")
 _ORPHAN_ALERT_AFTER = 3
 _STALLED_INTERVALS = 3
 _SELECTOR_CONNECTOR_RE = re.compile(r"^connectors\[([^\]]+)\]\.(.+)$")
@@ -70,24 +71,31 @@ def _wrapper_dir(hermes_home: str | os.PathLike[str] | None = None) -> Path:
     return _skill_dir(hermes_home) / "wrappers"
 
 
+def _validated_watch_id(watch_id: str) -> str:
+    normalized = str(watch_id or "").strip()
+    if not _WATCH_ID_RE.fullmatch(normalized):
+        raise ValueError("invalid_watch_id")
+    return normalized
+
+
 def _config_path(watch_id: str, hermes_home: str | os.PathLike[str] | None = None) -> Path:
-    return _watch_dir(hermes_home) / f"{watch_id}.json"
+    return _watch_dir(hermes_home) / f"{_validated_watch_id(watch_id)}.json"
 
 
 def _state_path(watch_id: str, hermes_home: str | os.PathLike[str] | None = None) -> Path:
-    return _watch_dir(hermes_home) / f"{watch_id}.state.json"
+    return _watch_dir(hermes_home) / f"{_validated_watch_id(watch_id)}.state.json"
 
 
 def _orphan_path(watch_id: str, hermes_home: str | os.PathLike[str] | None = None) -> Path:
-    return _watch_dir(hermes_home) / f"{watch_id}.orphan"
+    return _watch_dir(hermes_home) / f"{_validated_watch_id(watch_id)}.orphan"
 
 
 def _lock_path(watch_id: str, hermes_home: str | os.PathLike[str] | None = None) -> Path:
-    return _watch_dir(hermes_home) / f"{watch_id}.lock"
+    return _watch_dir(hermes_home) / f"{_validated_watch_id(watch_id)}.lock"
 
 
 def _wrapper_path(watch_id: str, hermes_home: str | os.PathLike[str] | None = None) -> Path:
-    return _wrapper_dir(hermes_home) / f"talaria_watch_{watch_id}.py"
+    return _wrapper_dir(hermes_home) / f"talaria_watch_{_validated_watch_id(watch_id)}.py"
 
 
 def _json_safe_load(path: Path) -> dict[str, Any] | None:
@@ -498,6 +506,10 @@ def _cron_ids_for_watch(watch_id: str) -> list[str]:
 
 
 def remove_watch(watch_id: str, *, hermes_home: str | os.PathLike[str] | None = None, remove_cron: bool = True) -> dict[str, Any]:
+    try:
+        watch_id = _validated_watch_id(watch_id)
+    except ValueError:
+        return {"ok": False, "error": "invalid_watch_id"}
     if remove_cron:
         for job_id in _cron_ids_for_watch(watch_id):
             subprocess.run(["hermes", "cron", "remove", job_id], check=False, capture_output=True, text=True)
@@ -631,6 +643,10 @@ def _previous_status(state: dict[str, Any]) -> str:
 
 
 def evaluate_watch(watch_id: str, *, home: str | os.PathLike[str] | None = None, hermes_home: str | os.PathLike[str] | None = None) -> str:
+    try:
+        watch_id = _validated_watch_id(watch_id)
+    except ValueError:
+        return "⚠ watch invalid: invalid_watch_id"
     config = read_watch_config(watch_id, hermes_home=hermes_home)
     if config is None:
         return _handle_missing_config(watch_id, hermes_home=hermes_home)
@@ -753,7 +769,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "remove-watch":
         result = remove_watch(args.watch_id, hermes_home=args.hermes_home)
         print(json.dumps(result, sort_keys=True))
-        return 0
+        return 0 if result.get("ok") else 1
     return 1
 
 

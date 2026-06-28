@@ -365,6 +365,32 @@ class TestTalariaWatch(unittest.TestCase):
             self.assertEqual(second, "")
             self.assertTrue((hermes_home / "talaria-skill" / "watches" / f"{watch_id}.orphan").exists())
 
+    def test_eval_rejects_traversal_watch_id_without_orphan_write(self):
+        watch = load_watch()
+        with tempfile.TemporaryDirectory() as td:
+            hermes_home = Path(td) / "hermes"
+
+            line = watch.evaluate_watch("../../victim", hermes_home=hermes_home)
+
+            self.assertEqual(line, "⚠ watch invalid: invalid_watch_id")
+            self.assertFalse((hermes_home / "victim.orphan").exists())
+            self.assertFalse((hermes_home / "talaria-skill" / "victim.orphan").exists())
+            self.assertFalse((hermes_home / "talaria-skill" / "watches").exists())
+
+    def test_remove_watch_rejects_traversal_watch_id_without_unlink(self):
+        watch = load_watch()
+        with tempfile.TemporaryDirectory() as td:
+            hermes_home = Path(td) / "hermes"
+            victim = hermes_home / "victim.json"
+            victim.parent.mkdir(parents=True, exist_ok=True)
+            victim.write_text("do not delete", encoding="utf-8")
+
+            result = watch.remove_watch("../../victim", hermes_home=hermes_home, remove_cron=False)
+
+            self.assertFalse(result["ok"], result)
+            self.assertEqual(result["error"], "invalid_watch_id")
+            self.assertTrue(victim.exists())
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
