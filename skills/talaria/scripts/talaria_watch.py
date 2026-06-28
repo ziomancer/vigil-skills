@@ -27,6 +27,7 @@ _SELECTOR_CONNECTOR_RE = re.compile(r"^connectors\[([^\]]+)\]\.(.+)$")
 _INTERVAL_RE = re.compile(r"^(?:every\s+)?([0-9]+(?:\.[0-9]+)?)([smhd])$", re.IGNORECASE)
 _DEGRADED_REASONS = frozenset({"owner_degraded", "owner_error", "owner_absent"})
 _CRON_FIELD_RANGES = ((0, 59), (0, 23), (1, 31), (1, 12), (0, 7))
+_CRON_TIMEOUT_SECONDS = 15
 
 
 def _load_bridge() -> Any:
@@ -151,6 +152,8 @@ def _atomic_write_text(path: Path, content: str) -> None:
 
 
 def _canonical_threshold(comparator: str, threshold: Any) -> Any:
+    if comparator in {"present", "absent"}:
+        return None
     if comparator in _NUMERIC_COMPARATORS:
         return float(threshold)
     if threshold in (None, ""):
@@ -442,7 +445,10 @@ def _create_cron(config: dict[str, Any], wrapper: Path, *, channel: str | None =
         "--name",
         f"talaria-watch-{config['watch_id']}",
     ]
-    result = subprocess.run(argv, check=False, capture_output=True, text=True)
+    try:
+        result = subprocess.run(argv, check=False, capture_output=True, text=True, timeout=_CRON_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired as exc:
+        return {"ok": False, "error": "cron_create_failed", "detail": f"timed out after {exc.timeout}s"}
     if result.returncode != 0:
         return {"ok": False, "error": "cron_create_failed", "detail": result.stderr or result.stdout}
     return {"ok": True, "stdout": result.stdout}
@@ -485,14 +491,17 @@ def register_watch(
     return {"ok": True, "watch_id": config["watch_id"], "config": str(_config_path(str(config["watch_id"]), hermes_home)), "wrapper": str(wrapper), "cron": cron}
 
 
-def _cron_ids_for_watch(watch_id: str) -> list[str]:
-    result = subprocess.run(["hermes", "cron", "list", "--json"], check=False, capture_output=True, text=True)
+def _cron_ids_for_watch(watch_id: str) -> dict[str, Any]:
+    try:
+        result = subprocess.run(["hermes", "cron", "list", "--json"], check=False, capture_output=True, text=True, timeout=_CRON_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired as exc:
+        return {"ok": False, "error": "cron_list_failed", "detail": f"timed out after {exc.timeout}s"}
     if result.returncode != 0:
-        return []
+        return {"ok": False, "error": "cron_list_failed", "detail": result.stderr or result.stdout}
     try:
         payload = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return []
+    except json.JSONDecodeError as exc:
+        return {"ok": False, "error": "cron_list_failed", "detail": str(exc)}
     jobs = payload if isinstance(payload, list) else payload.get("jobs", []) if isinstance(payload, dict) else []
     ids: list[str] = []
     for job in jobs:
@@ -502,7 +511,7 @@ def _cron_ids_for_watch(watch_id: str) -> list[str]:
             ids.append(str(job["job_id"]))
         elif job.get("name") == f"talaria-watch-{watch_id}" and job.get("id"):
             ids.append(str(job["id"]))
-    return ids
+    return {"ok": True, "ids": ids}
 
 
 def remove_watch(watch_id: str, *, hermes_home: str | os.PathLike[str] | None = None, remove_cron: bool = True) -> dict[str, Any]:
@@ -511,8 +520,17 @@ def remove_watch(watch_id: str, *, hermes_home: str | os.PathLike[str] | None = 
     except ValueError:
         return {"ok": False, "error": "invalid_watch_id"}
     if remove_cron:
-        for job_id in _cron_ids_for_watch(watch_id):
-            subprocess.run(["hermes", "cron", "remove", job_id], check=False, capture_output=True, text=True)
+        cron = _cron_ids_for_watch(watch_id)
+        if not cron.get("ok"):
+            cron["watch_id"] = watch_id
+            return cron
+        for job_id in cron.get("ids", []):
+            try:
+                result = subprocess.run(["hermes", "cron", "remove", str(job_id)], check=False, capture_output=True, text=True, timeout=_CRON_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired as exc:
+                return {"ok": False, "watch_id": watch_id, "error": "cron_remove_failed", "job_id": str(job_id), "detail": f"timed out after {exc.timeout}s"}
+            if result.returncode != 0:
+                return {"ok": False, "watch_id": watch_id, "error": "cron_remove_failed", "job_id": str(job_id), "detail": result.stderr or result.stdout}
     removed: list[str] = []
     for path in (_wrapper_path(watch_id, hermes_home), _config_path(watch_id, hermes_home), _state_path(watch_id, hermes_home), _orphan_path(watch_id, hermes_home), _lock_path(watch_id, hermes_home)):
         with contextlib.suppress(OSError):
@@ -689,19 +707,19 @@ def evaluate_watch(watch_id: str, *, home: str | os.PathLike[str] | None = None,
         breached = _compare(str(config["comparator"]), value, config.get("threshold"))
         previous = state.get("breached") if isinstance(state.get("breached"), bool) else None
         line = ""
-        if stalled:
-            line = _stalled_line(config)
-            state["stalled_reported"] = True
-        elif breached and previous is not True:
+        if breached and previous is not True:
             line = _transition_line(config, value, True, False)
         elif not breached and previous is True:
             line = _transition_line(config, value, False, bool(state.get("degraded_window")))
+        elif stalled:
+            line = _stalled_line(config)
         state.update(
             {
                 "status": "breached" if breached else "healthy",
                 "breached": breached,
                 "last_value": value,
                 "last_evaluated_at": now,
+                "stalled_reported": False,
             }
         )
         if not breached:

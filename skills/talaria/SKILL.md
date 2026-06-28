@@ -56,7 +56,7 @@ Prefer the narrowest safe intent that answers the user's question.
 | "health", "state health" | `read_health` | `${HERMES_PYTHON:-python} skills/talaria/scripts/talaria_read.py health` | State health only. |
 | "refresh live snapshot" | `read_operational_refresh` | `${HERMES_PYTHON:-python} skills/talaria/scripts/talaria_read.py --mrkdwn operational --refresh` | Use sparingly; respects shared cache/lease and vendor backoff. |
 | "ack this observation" | `propose_ack` then `act_ack` after approval | propose: `${HERMES_PYTHON:-python} skills/talaria/scripts/talaria_bridge.py propose ack_observation <observation_id>`; approved write: `${HERMES_PYTHON:-python} skills/talaria/scripts/talaria_read.py act ack --payload '{"observation_id":"<id>","actor":"operator"}'` | Local state write only; idempotent replays return `already applied (no-op)`. |
-| "turn this into a kanban card" | `propose_triage` then `act_triage` after approval | propose: `${HERMES_PYTHON:-python} skills/talaria/scripts/talaria_bridge.py propose kanban_triage <observation_id> --workspace <workspace> --board <board>`; approved write: `${HERMES_PYTHON:-python} skills/talaria/scripts/talaria_read.py act triage --payload '{"workspace":"<workspace>","observation_id":"<id>"}'` | Talaria dedups by canonical workspace/board/source key; duplicate/idempotent replay is success/no-op. |
+| "turn this into a kanban card" | `propose_triage` then `act_triage` after approval | propose: `${HERMES_PYTHON:-python} skills/talaria/scripts/talaria_bridge.py propose kanban_triage <observation_id> --workspace <workspace> --board <board>`; approved write: `${HERMES_PYTHON:-python} skills/talaria/scripts/talaria_read.py act triage --payload '{"workspace":"<workspace>","observation_id":"<id>"}'` | `--board` is proposal preview-only in this cut; the approved action uses Talaria's workspace board config. Talaria dedups by canonical workspace/board/source key; duplicate/idempotent replay is success/no-op. |
 | "watch this metric", "alert when X crosses Y" | `register_watch` | `${HERMES_PYTHON:-python} skills/talaria/scripts/talaria_watch.py register <selector> <comparator> <threshold> <schedule> <label>` | Validates selector owner and schedule freshness floor before creating a cron wrapper. |
 | "remove watch" | `remove_watch` | `${HERMES_PYTHON:-python} skills/talaria/scripts/talaria_watch.py remove-watch <watch_id>` | Removes wrapper/config/state/orphan/lock and matching cron jobs. |
 
@@ -117,7 +117,8 @@ Watch behavior:
 - Alerts only on transitions into breach; recovers only on transitions out of breach.
 - Degraded owners produce `cannot_evaluate` instead of false healthy/false breached.
 - Prior-breached degraded windows remain quiet until recovery, then recovery is annotated as possibly missed transitions.
-- Missing configs emit an orphan warning once, then self-clean after repeated misses.
+- Missing configs emit an orphan warning once, then self-clean after repeated misses; invalid watch ids fail before any watch/orphan path is built.
+- Watch removal aborts before local file deletion if cron list/remove fails, so retry can clean up the scheduler entry first.
 - Evaluators are script-only/no-agent cron wrappers and stay silent on healthy ticks.
 
 ## Test plan

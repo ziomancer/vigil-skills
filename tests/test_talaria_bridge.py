@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib.util
+import io
 import json
 import os
 import sys
@@ -388,6 +389,84 @@ class TestTalariaBridge(unittest.TestCase):
             self.assertTrue(second_triage["action"]["duplicate"])
             self.assertTrue(second_triage["action"]["idempotent_replay"])
             self.assertEqual(second_triage["message"], "already applied (no-op)")
+
+    def test_act_ack_uses_caller_idempotency_key(self):
+        bridge = load_bridge()
+        with tempfile.TemporaryDirectory() as td:
+            root = fake_talaria_root(Path(td))
+            state_file = root / "plugins" / "talaria" / "state.json"
+            state_file.write_text(
+                json.dumps({"observations": {"obs-1": {"id": "obs-1", "workspace": "serenade"}}}),
+                encoding="utf-8",
+            )
+
+            first = bridge.act("ack_observation", {"observation_id": "obs-1"}, idempotency_key="caller-key", home=root)
+            replay = bridge.act("ack_observation", {"observation_id": "obs-1"}, idempotency_key="caller-key", home=root)
+
+            self.assertTrue(first["ok"], first)
+            self.assertEqual(first["action"]["idempotency_key"], "caller-key")
+            self.assertTrue(replay["ok"], replay)
+            self.assertTrue(replay["action"]["idempotent_replay"])
+
+    def test_print_failure_outputs_structured_json(self):
+        bridge = load_bridge()
+        out = io.StringIO()
+        err = io.StringIO()
+        failure = {
+            "ok": False,
+            "error": "state_corrupt",
+            "hint": "repair state",
+            "detail": {"reason": "bad-json"},
+            "checks": [{"ok": False, "code": "state_corrupt"}],
+        }
+
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            exit_code = bridge._print_failure("doctor", failure)
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(err.getvalue(), "")
+        parsed = json.loads(out.getvalue())
+        self.assertEqual(parsed["error"], "state_corrupt")
+        self.assertEqual(parsed["detail"], {"reason": "bad-json"})
+        self.assertEqual(parsed["checks"], [{"ok": False, "code": "state_corrupt"}])
+
+    def test_load_module_serializes_temporary_sys_path_mutation(self):
+        bridge = load_bridge()
+        with tempfile.TemporaryDirectory() as td:
+            temp = Path(td)
+            module_paths = [write(temp / f"mod_{index}.py", f"VALUE = {index}\n") for index in range(4)]
+            barrier = threading.Barrier(len(module_paths))
+            active = 0
+            max_active = 0
+            active_lock = threading.Lock()
+
+            @contextlib.contextmanager
+            def slow_sys_path(_paths):
+                nonlocal active, max_active
+                with active_lock:
+                    active += 1
+                    max_active = max(max_active, active)
+                time.sleep(0.05)
+                try:
+                    yield
+                finally:
+                    with active_lock:
+                        active -= 1
+
+            def worker(index: int) -> None:
+                barrier.wait(timeout=2)
+                module = bridge._load_module(f"locked_import_{index}", module_paths[index], extra_sys_paths=[temp])
+                self.assertEqual(module.VALUE, index)
+
+            with mock.patch.object(bridge, "_temporary_sys_path", side_effect=slow_sys_path):
+                threads = [threading.Thread(target=worker, args=(index,)) for index in range(len(module_paths))]
+                for thread in threads:
+                    thread.start()
+                for thread in threads:
+                    thread.join(timeout=2)
+
+            self.assertTrue(all(not thread.is_alive() for thread in threads))
+            self.assertEqual(max_active, 1)
 
     def test_act_exception_mapping(self):
         bridge = load_bridge()

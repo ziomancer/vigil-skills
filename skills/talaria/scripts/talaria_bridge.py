@@ -53,6 +53,7 @@ ERROR_HINTS = {
 
 _ACTIONS = {"ack_observation", "kanban_triage"}
 _IMPORT_CACHE: dict[tuple[str, str], Any] = {}
+_IMPORT_LOCK = threading.RLock()
 
 
 def _as_path(value: str | os.PathLike[str] | None) -> Path | None:
@@ -226,25 +227,26 @@ def _temporary_sys_path(paths: list[Path]) -> Iterator[None]:
 
 
 def _load_module(name: str, path: Path, *, package_dir: Path | None = None, extra_sys_paths: list[Path] | None = None) -> Any:
-    cache_key = (name, str(path))
-    if cache_key in _IMPORT_CACHE:
-        return _IMPORT_CACHE[cache_key]
-    kwargs: dict[str, Any] = {}
-    if package_dir is not None:
-        kwargs["submodule_search_locations"] = [str(package_dir)]
-    spec = importlib.util.spec_from_file_location(name, path, **kwargs)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"cannot load module {name} from {path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    try:
-        with _temporary_sys_path(extra_sys_paths or []):
-            spec.loader.exec_module(module)
-    except Exception:
-        sys.modules.pop(name, None)
-        raise
-    _IMPORT_CACHE[cache_key] = module
-    return module
+    with _IMPORT_LOCK:
+        cache_key = (name, str(path))
+        if cache_key in _IMPORT_CACHE:
+            return _IMPORT_CACHE[cache_key]
+        kwargs: dict[str, Any] = {}
+        if package_dir is not None:
+            kwargs["submodule_search_locations"] = [str(package_dir)]
+        spec = importlib.util.spec_from_file_location(name, path, **kwargs)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"cannot load module {name} from {path}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        try:
+            with _temporary_sys_path(extra_sys_paths or []):
+                spec.loader.exec_module(module)
+        except Exception:
+            sys.modules.pop(name, None)
+            raise
+        _IMPORT_CACHE[cache_key] = module
+        return module
 
 
 def _load_state(root: Path) -> Any:
@@ -873,7 +875,7 @@ def act(
             action = act_ack(
                 observation_id,
                 actor=str(payload.get("actor") or "operator"),
-                idempotency_key=f"ack:{observation_id}",
+                idempotency_key=idempotency_key,
                 state=state,
             )
         elif action_kind == "kanban_triage":
@@ -945,10 +947,11 @@ def propose_action(
                 f"*Workspace:* {workspace}",
                 f"*Board:* {target_board}",
                 "Talaria dedups triage on its canonical key (workspace/board/source_connector/source_ref/kind); recurrences collapse onto one card.",
-                "Editable fields: workspace, board.",
+                "Editable fields: workspace. Board is preview-only in this cut; the approved action uses Talaria's workspace board config.",
             ]
         )
-    lines.extend(["", "Reply: approve / approve with edit: workspace=<value> or board=<value> / cancel"])
+    edit_hint = "workspace=<value>" if action_kind == "kanban_triage" else "actor=<value>"
+    lines.extend(["", f"Reply: approve / approve with edit: {edit_hint} / cancel"])
     return _ok(kind=action_kind, observation=observation, mrkdwn="\n".join(lines))
 
 
@@ -1058,7 +1061,9 @@ def _print_success(result: dict[str, Any]) -> int:
 
 
 def _print_failure(command: str, result: dict[str, Any]) -> int:
-    print(f"talaria {command} failed: {result.get('error')} - {result.get('hint')}", file=sys.stderr)
+    payload = dict(result)
+    payload.setdefault("command", command)
+    print(json.dumps(payload, sort_keys=True))
     return 1
 
 

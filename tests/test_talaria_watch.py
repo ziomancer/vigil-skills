@@ -166,6 +166,19 @@ class TestTalariaWatch(unittest.TestCase):
             self.assertEqual(result["error"], "invalid_threshold")
             self.assertFalse((temp / "hermes" / "talaria-skill" / "watches").exists())
 
+    def test_present_absent_thresholds_are_canonicalized_for_dedupe(self):
+        watch = load_watch()
+
+        present_a = watch.build_watch_config("metrics.orders_count", "present", "ignored", "every 1m", "Orders present")
+        present_b = watch.build_watch_config("metrics.orders_count", "present", "", "every 1m", "Orders present")
+        absent_a = watch.build_watch_config("metrics.missing", "absent", "ignored", "every 1m", "Orders absent")
+        absent_b = watch.build_watch_config("metrics.missing", "absent", None, "every 1m", "Orders absent")
+
+        self.assertIsNone(present_a["threshold"])
+        self.assertEqual(present_a["watch_id"], present_b["watch_id"])
+        self.assertIsNone(absent_a["threshold"])
+        self.assertEqual(absent_a["watch_id"], absent_b["watch_id"])
+
     def test_registration_rejects_cron_below_owner_freshness_floor(self):
         watch = load_watch()
         with tempfile.TemporaryDirectory() as td:
@@ -352,6 +365,53 @@ class TestTalariaWatch(unittest.TestCase):
             self.assertIn("stalled", line)
             self.assertEqual(second, "")
 
+    def test_stalled_then_breach_emits_breach_transition(self):
+        watch = load_watch()
+        with tempfile.TemporaryDirectory() as td:
+            temp = Path(td)
+            snapshot_file = temp / "snapshot.json"
+            write_snapshot(snapshot_file, metrics={"orders_count": 9})
+            root = fake_talaria_root(temp, aggregate_from_snapshot(snapshot_file))
+            hermes_home = temp / "hermes"
+            config = watch.build_watch_config("metrics.orders_count", "gt", 5, "every 1m", "Orders")
+            watch.write_watch_config(config, hermes_home=hermes_home)
+            watch.write_watch_state(
+                config["watch_id"],
+                {"breached": False, "status": "healthy", "last_evaluated_at": time.time() - 400, "stalled_reported": False},
+                hermes_home=hermes_home,
+            )
+
+            line = watch.evaluate_watch(config["watch_id"], home=root, hermes_home=hermes_home)
+            state = watch.read_watch_state(config["watch_id"], hermes_home=hermes_home)
+
+            self.assertIn("🔔 watch", line)
+            self.assertNotIn("stalled", line)
+            self.assertEqual(state["status"], "breached")
+            self.assertTrue(state["breached"])
+            self.assertFalse(state["stalled_reported"])
+
+    def test_normal_evaluation_clears_stalled_reported(self):
+        watch = load_watch()
+        with tempfile.TemporaryDirectory() as td:
+            temp = Path(td)
+            snapshot_file = temp / "snapshot.json"
+            write_snapshot(snapshot_file, metrics={"orders_count": 4})
+            root = fake_talaria_root(temp, aggregate_from_snapshot(snapshot_file))
+            hermes_home = temp / "hermes"
+            config = watch.build_watch_config("metrics.orders_count", "gt", 5, "every 1m", "Orders")
+            watch.write_watch_config(config, hermes_home=hermes_home)
+            watch.write_watch_state(
+                config["watch_id"],
+                {"breached": False, "status": "healthy", "last_evaluated_at": time.time(), "stalled_reported": True},
+                hermes_home=hermes_home,
+            )
+
+            line = watch.evaluate_watch(config["watch_id"], home=root, hermes_home=hermes_home)
+            state = watch.read_watch_state(config["watch_id"], hermes_home=hermes_home)
+
+            self.assertEqual(line, "")
+            self.assertFalse(state["stalled_reported"])
+
     def test_watch_config_missing(self):
         watch = load_watch()
         with tempfile.TemporaryDirectory() as td:
@@ -390,6 +450,52 @@ class TestTalariaWatch(unittest.TestCase):
             self.assertFalse(result["ok"], result)
             self.assertEqual(result["error"], "invalid_watch_id")
             self.assertTrue(victim.exists())
+
+    def test_remove_watch_preserves_files_when_cron_remove_fails(self):
+        watch = load_watch()
+        with tempfile.TemporaryDirectory() as td:
+            temp = Path(td)
+            hermes_home = temp / "hermes"
+            watch_id = "0123456789abcdef"
+            config = watch.build_watch_config("metrics.orders_count", "gt", 5, "every 1m", "Orders")
+            config["watch_id"] = watch_id
+            watch.write_watch_config(config, hermes_home=hermes_home)
+            watch.write_watch_state(watch_id, {"status": "healthy"}, hermes_home=hermes_home)
+            wrapper = hermes_home / "talaria-skill" / "wrappers" / f"talaria_watch_{watch_id}.py"
+            write(wrapper, "# wrapper\n")
+
+            def fake_run(argv, **_kwargs):
+                if argv[:3] == ["hermes", "cron", "list"]:
+                    return mock.Mock(returncode=0, stdout=json.dumps({"jobs": [{"name": f"talaria-watch-{watch_id}", "job_id": "job-1"}]}), stderr="")
+                if argv[:3] == ["hermes", "cron", "remove"]:
+                    return mock.Mock(returncode=1, stdout="", stderr="remove failed")
+                raise AssertionError(argv)
+
+            with mock.patch.object(watch.subprocess, "run", side_effect=fake_run):
+                result = watch.remove_watch(watch_id, hermes_home=hermes_home)
+
+            self.assertFalse(result["ok"], result)
+            self.assertEqual(result["error"], "cron_remove_failed")
+            self.assertTrue((hermes_home / "talaria-skill" / "watches" / f"{watch_id}.json").exists())
+            self.assertTrue((hermes_home / "talaria-skill" / "watches" / f"{watch_id}.state.json").exists())
+            self.assertTrue(wrapper.exists())
+
+    def test_remove_watch_preserves_files_when_cron_list_fails(self):
+        watch = load_watch()
+        with tempfile.TemporaryDirectory() as td:
+            temp = Path(td)
+            hermes_home = temp / "hermes"
+            watch_id = "0123456789abcdef"
+            config = watch.build_watch_config("metrics.orders_count", "gt", 5, "every 1m", "Orders")
+            config["watch_id"] = watch_id
+            watch.write_watch_config(config, hermes_home=hermes_home)
+
+            with mock.patch.object(watch.subprocess, "run", return_value=mock.Mock(returncode=1, stdout="", stderr="list failed")):
+                result = watch.remove_watch(watch_id, hermes_home=hermes_home)
+
+            self.assertFalse(result["ok"], result)
+            self.assertEqual(result["error"], "cron_list_failed")
+            self.assertTrue((hermes_home / "talaria-skill" / "watches" / f"{watch_id}.json").exists())
 
 
 if __name__ == "__main__":
